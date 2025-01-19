@@ -52,34 +52,7 @@ class ExchangeWebSocket(ABC):
     @abstractmethod
     async def _map_format(self, data: dict):
         raise NotImplementedError
-    
-    # async def _receive_all(self):
-    #     """所有訂閱串流 generator"""
         
-    #     tasks = []
-    #     for market_type, websocket in self.connections.items():
-    #         gen = self._recv_from_connection(market_type, websocket)
-    #         task = asyncio.create_task(gen.__anext__())
-    #         tasks.append((gen, task))
-        
-    #     while True:
-    #         # 等待任一數據到達
-    #         done, _ = await asyncio.wait(
-    #             [task for _, task in tasks],
-    #             return_when=asyncio.FIRST_COMPLETED
-    #         )
-            
-    #         # 更新任務列表並返回數據
-    #         for done_task in done:
-    #             for i, (gen, task) in enumerate(tasks):
-    #                 if task == done_task:
-    #                     try:
-    #                         yield await done_task
-    #                         # 創建新的任務繼續接收
-    #                         tasks[i] = (gen, asyncio.create_task(gen.__anext__()))
-    #                     except StopAsyncIteration:
-    #                         continue
-    
     async def _receive_all(self):
         """所有訂閱串流 generator"""
         while True:
@@ -131,58 +104,6 @@ class ExchangeWebSocket(ABC):
                 except Exception as e:
                     self.logger.error(f"Error in main loop: {str(e)}")
                     await asyncio.sleep(1)  # 避免在錯誤情況下過度循環
-
-        
-               
-    # async def _receive_all(self):
-    #     """所有訂閱串流 generator"""
-    #     while True:
-    #         if not self.connections:
-    #             continue
-                
-    #         # 為每個連接創建接收協程
-    #         receivers = [
-    #             self._recv_from_connection(market_type, ws)
-    #             for market_type, ws in self.connections.items()
-    #         ]
-            
-    #         try:
-    #             # 同時等待所有接收器
-    #             async for message in self._merge_generators(receivers):
-    #                 yield message
-    #         except Exception as e:
-    #             self.logger.error(f"Error in _receive_all: {str(e)}")
-                        
-    # async def _merge_generators(self, generators):
-    #     """合併多個異步生成器"""
-    #     # 追蹤每個生成器的下一個值
-    #     pending = {
-    #         asyncio.create_task(gen.__anext__()): gen
-    #         for gen in generators
-    #     }
-        
-    #     while pending:
-    #         done, _ = await asyncio.wait(
-    #             pending.keys(),
-    #             return_when=asyncio.FIRST_COMPLETED
-    #         )
-            
-    #         for done_task in done:
-    #             gen = pending.pop(done_task)
-    #             try:
-    #                 result = await done_task
-    #                 yield result
-    #                 # 為這個生成器創建新的任務
-    #                 pending[asyncio.create_task(gen.__anext__())] = gen
-    #             except StopAsyncIteration:
-    #                 continue
-    #             except Exception as e:
-    #                 self.logger.error(f"Error in generator: {str(e)}")
-    #                 # 如果發生錯誤，嘗試重新添加生成器
-    #                 try:
-    #                     pending[asyncio.create_task(gen.__anext__())] = gen
-    #                 except Exception:
-    #                     pass
                         
     async def _send_pong(self, websocket, data):
         pong_message = {"pong": data["ping"]}
