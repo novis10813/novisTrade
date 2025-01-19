@@ -1,7 +1,8 @@
 import json
+import redis
 import websockets
 
-from kafka import KafkaProducer
+
 from typing import List, Union
 
 from .base_ws import ExchangeWebSocket
@@ -14,14 +15,16 @@ class BinanceWebSocket(ExchangeWebSocket):
         self.websocket = None
         self.is_connected = False
         
-        self.producer = KafkaProducer(
-            bootstrap_servers='localhost:9092',
-            value_serializer=lambda x: json.dumps(x).encode('utf-8')
+        self.redis_producer = redis.Redis(
+            host="localhost",
+            port=6379,
+            db=0,
+            decode_responses=True
         )
         
     def _get_topic_name(self, symbol: str, stream_type: str, market_type: str = "spot") -> str:
         # 產生 topic 名稱
-        return f"binance.{market_type}.{symbol}.{stream_type}"
+        return f"binance:{market_type}:{symbol}:{stream_type}"
         
     def _get_base_url(self, market_type="spot"):
         urls = {
@@ -256,11 +259,11 @@ class BinanceWebSocket(ExchangeWebSocket):
             return
         
         async for data in self._receive_all():
-            # TODO:
-            # 1. 修改成統一資料格式
-            # 2. 依據交易對和串流類型生成 topic 名稱
             topic, mapped_data = self._map_format(data)
-            # print(mapped_data)
-            # quit()
-            # print(data)
-            self.producer.send(topic=topic, value=mapped_data)
+            self.redis_producer.publish(topic, json.dumps(mapped_data))
+            
+    def __del__(self):
+        """
+        清理資源
+        """
+        self.redis_producer.close()
