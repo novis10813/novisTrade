@@ -84,7 +84,7 @@ class ExchangeWebSocket(ABC):
                         try:
                             result = await task
                             if result:  # 如果有數據則 yield
-                                yield result
+                                yield market_type, result
                             # 為這個 generator 創建新的任務
                             pending[asyncio.create_task(gen.__anext__())] = (market_type, gen)
                         except StopAsyncIteration:

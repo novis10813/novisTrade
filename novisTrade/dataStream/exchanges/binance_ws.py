@@ -14,6 +14,7 @@ class BinanceWebSocket(ExchangeWebSocket):
         self.base_url = self._get_base_url()
         self.websocket = None
         self.is_connected = False
+        self.subscriptions = {}
         
         self.redis_producer = redis.Redis(
             host="localhost",
@@ -195,14 +196,15 @@ class BinanceWebSocket(ExchangeWebSocket):
         else:
             self.logger.error(f"Failed to get property: {response}")
             
-    def _map_format(self, data: dict):
+    def _map_format(self, market_type: str, data: dict):
         """
         將數據映射成統一格式
         """
         
         event_type = data.get("e")
-        
-        topic = self._map_topic(data)
+        symbol = data.get("s").lower()
+        stream_type = data.get("e").lower()
+        topic = self._get_topic_name(symbol, stream_type, market_type)
         
         format_map = {
             "aggTrade": self._format_agg_trade,
@@ -213,22 +215,14 @@ class BinanceWebSocket(ExchangeWebSocket):
         
         handler = format_map.get(event_type)
         if handler:
-            return topic, handler(data)
+            return topic, handler(data, topic)
         else:
             self.logger.warning(f"Not implemented event type: {event_type}")
             return topic, data
         
-    def _map_topic(self, data: dict) -> str:
-        """
-        將數據映射成 topic 名稱
-        """
-        symbol = data.get("s").lower()
-        stream_type = data.get("e").lower()
-        return self._get_topic_name(symbol, stream_type)
-        
-    def _format_agg_trade(self, data: dict):
+    def _format_agg_trade(self, data: dict, topic: str):
         return {
-            "topic": f"binance.aggtrade.{data['s'].lower()}",
+            "topic": topic,
             "exchTimestamp": data["T"],
             "localTimestamp": data["E"],
             "price": data["p"],
@@ -239,9 +233,9 @@ class BinanceWebSocket(ExchangeWebSocket):
             "aggTradeId": data["a"]
         }
         
-    def _format_trade(self, data: dict):
+    def _format_trade(self, data: dict, topic: str):
         return {
-            "topic": f"binance.trade.{data['s'].lower()}",
+            "topic": topic,
             "exchTimestamp": data["T"],
             "localTimestamp": data["E"],
             "price": data["p"],
@@ -258,8 +252,8 @@ class BinanceWebSocket(ExchangeWebSocket):
             self.logger.warning("No connections established")
             return
         
-        async for data in self._receive_all():
-            topic, mapped_data = self._map_format(data)
+        async for market_type, data in self._receive_all():
+            topic, mapped_data = self._map_format(market_type, data)
             self.redis_producer.publish(topic, json.dumps(mapped_data))
             
     def __del__(self):
