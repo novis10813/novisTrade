@@ -141,6 +141,9 @@ class DataStreamServer:
         return True
     
     async def _handle_subscribe(self, request: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        TODO: request 中的 symbol 和 stream_type 要不要直接傳入 stream?
+        """
         try:
             if not all(k in request for k in ['exchange', 'symbol', 'market_type', 'client_id']):
                 return {
@@ -152,7 +155,7 @@ class DataStreamServer:
             # 所以在這邊，我傳進來的格式應該是統一的格式，而不是交易所的格式
             # 然後在每個交易所的 websocket 類裡面，再進行格式轉換
             exchange = request['exchange']
-            symbol = request['symbol']
+            symbol = request['symbol'] # 會是一個 list，裡面會有不同的幣對
             market_type = request.get('market_type', 'spot')
             stream_type = request.get('stream_type', 'trade')
             client_id = request['client_id']
@@ -161,7 +164,7 @@ class DataStreamServer:
             try:
                 exchange_ws = self.get_exchange_connection(exchange)
                 # TODO: 格式轉換，且 subscribe 的方法應該是統一的 (exchange_ws 的是 subscribe(self, symbol: str, stream_type: str), binance 是 subscribe(self, params: Union[str, List[str]], market_type: str = "spot", request_id: int = 1))
-                await exchange_ws.subscribe(symbol, stream_type)
+                await exchange_ws.subscribe(symbol, stream_type, market_type)
             except Exception as e:
                 return {
                     'success': False,
