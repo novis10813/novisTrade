@@ -15,7 +15,6 @@ class ExchangeWebSocket(ABC):
         self.logger.addHandler(handler)
         
         self.connections = {}
-        self.subscriptions = {}
         
     @abstractmethod
     async def _connect(self):
