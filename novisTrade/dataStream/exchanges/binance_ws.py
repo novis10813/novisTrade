@@ -1,21 +1,11 @@
 import json
 import redis
-import websockets
-
-
 from typing import List, Union
-
-from .base_ws import ExchangeWebSocket
-
+from novisTrade.dataStream.exchanges.base_ws import ExchangeWebSocket
 
 class BinanceWebSocket(ExchangeWebSocket):
     def __init__(self):
         super().__init__()
-        self.base_url = self._get_base_url()
-        self.websocket = None
-        self.is_connected = False
-        self.subscriptions = {}
-        
         self.redis_producer = redis.Redis(
             host="localhost",
             port=6379,
@@ -24,183 +14,151 @@ class BinanceWebSocket(ExchangeWebSocket):
         )
         
     def _get_topic_name(self, symbol: str, stream_type: str, market_type: str = "spot") -> str:
-        # 產生 topic 名稱
         return f"binance:{market_type}:{symbol}:{stream_type}"
         
     def _get_base_url(self, market_type="spot"):
         urls = {
             "spot": "wss://stream.binance.com:9443/ws",
-            "usd_futures": "wss://fstream.binance.com/ws",
-            "coin_futures": "wss://dstream.binance.com/ws"
+            "perp": "wss://fstream.binance.com/ws",
+            "coin-m": "wss://dstream.binance.com/ws"
         }
         return urls.get(market_type, urls["spot"])
-    
-    async def _connect(self, stream: str, market_type: str = "spot"):
-        url = f"{self._get_base_url(market_type)}/{stream}"
+        
+    async def _handle_message(self, connection_id: str, message: str):
+        """處理接收到的 WebSocket 訊息"""
+        try:
+            data = json.loads(message)
+            
+            # 處理心跳訊息
+            if "ping" in data:
+                await self.ws_manager.send_message(
+                    connection_id,
+                    json.dumps({"pong": data["ping"]})
+                )
+                return
+                
+            # 處理訂閱確認訊息
+            if "result" in data:
+                self.logger.info(f"Subscription confirmed for {connection_id}")
+                return
+                
+            # 處理市場數據
+            market_type = connection_id.split(":")[0]  
+            topic, mapped_data = self._map_format(market_type, data)
+            
+            # 發送到 Redis
+            self.redis_producer.publish(topic, json.dumps(mapped_data))
+            
+        except Exception as e:
+            self.logger.error(f"Error handling message: {str(e)}")
+            
+    async def subscribe(
+        self,
+        streams: Union[str, List[str]],
+        market_type: str = "spot",
+        request_id: int = 1
+    ) -> bool:
+        """訂閱指定市場的串流"""
+        if isinstance(streams, str):
+            streams = [streams]
+            
+        # 建立連接 ID
+        connection_id = f"{market_type}:main"
+        
+        # 如果尚未建立連接
+        if connection_id not in self.ws_manager.connections:
+            try:
+                url = f"{self._get_base_url(market_type)}/{streams[0]}"
+                await self.ws_manager.add_connection(url, connection_id)
+            except Exception as e:
+                self.logger.error(f"Failed to establish connection: {str(e)}")
+                return False
+                
+        # 發送訂閱訊息
+        subscribe_message = {
+            "method": "SUBSCRIBE",
+            "params": streams,
+            "id": request_id
+        }
         
         try:
-            websocket = await websockets.connect(url)
-            self.connections[market_type] = websocket
-            self.subscriptions[market_type] = set()
-            self.logger.info(f"Connected to {url}")
+            await self.ws_manager.send_message(
+                connection_id,
+                json.dumps(subscribe_message)
+            )
+            
+            # 更新訂閱記錄
+            if market_type not in self.subscriptions:
+                self.subscriptions[market_type] = set()
+            self.subscriptions[market_type].update(streams)
+            
+            self.logger.info(f"Successfully subscribed to {market_type}: {streams}")
             return True
+            
         except Exception as e:
-            self.logger.error(f"Connection failed: {str(e)}")
+            self.logger.error(f"Subscription failed: {str(e)}")
             return False
         
+    async def unsubscribe(
+        self,
+        streams: Union[str, List[str]],
+        market_type: str = "spot",
+        request_id: int = 312
+    ):
+        """取消訂閱一個或多個串流"""
+        if isinstance(streams, str):
+            streams = [streams]
+            
+        connection_id = f"{market_type}:main"
+        
+        if connection_id not in self.ws_manager.connections:
+            self.logger.warning(f"No connection found for {connection_id}")
+            return
+            
+        unsubscribe_message = {
+            "method": "UNSUBSCRIBE",
+            "params": streams,
+            "id": request_id
+        }
+        
+        try:
+            await self.ws_manager.send_message(
+                connection_id,
+                json.dumps(unsubscribe_message)
+            )
+            
+            # 更新訂閱記錄
+            if market_type not in self.subscriptions:
+                self.subscriptions[market_type] = set()
+            self.subscriptions[market_type].difference_update(streams)
+            
+            self.logger.info(f"Successfully unsubscribed from {market_type}: {streams}")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Unsubscription failed: {str(e)}")
+            return False
+            
     async def reconnect(self, market_type: str):
-        """
-        重新連接指定市場
-        """
-        # 獲取該市場的訂閱列表
+        """重新連接指定市場"""
+        connection_id = f"{market_type}:main"
+        
+        # 先移除現有連接
+        if connection_id in self.ws_manager.connections:
+            await self.ws_manager.remove_connection(connection_id)
+            
+        # 取得該市場的訂閱列表
         subscriptions = list(self.subscriptions.get(market_type, set()))
         
         if not subscriptions:
             self.logger.warning(f"No subscriptions found for {market_type}")
             return False
-
-        # 使用第一個訂閱來重新建立連接
-        initial_stream = subscriptions[0]
-        success = await self._connect(initial_stream, market_type)
-        
-        if success:
-            # 重新訂閱所有串流
-            for stream in subscriptions:
-                symbol, stream_type = stream.split("@")
-                await self.subscribe(symbol, stream_type, market_type)
-            self.logger.info(f"Successfully reconnected to {market_type} and resubscribed")
-            return True
-        return False
-    
-    async def _wait_for_response(self, market_type: str, request_id: int):
-        websocket = self.connections[market_type]
-        while True:
-            response = await websocket.recv()
-            data = json.loads(response)
             
-            if isinstance(data, dict) and "id" in data:
-                if data["id"] == request_id:
-                    return data
-            elif "e" in data:
-                continue
-    
-    async def subscribe(
-        self,
-        symbol: str,
-        stream_type: str,
-        market_type: str = "spot",
-        request_id: int = 1
-    ):
-        """
-        訂閱指定市場的串流
-        """
-        stream = f"{symbol.lower()}@{stream_type}"
+        # 重新訂閱
+        return await self.subscribe(subscriptions[0], market_type)
         
-        if market_type not in self.connections:
-            # 如果該市場尚未連接，先建立連接
-            success = await self._connect(stream, market_type)
-            if not success:
-                return
-        
-        websocket = self.connections[market_type]
-        
-        if isinstance(stream, str):
-            stream = [stream]
-            
-        subscribe_message = {
-            "method": "SUBSCRIBE",
-            "params": stream,
-            "id": request_id
-        }
-        
-        await websocket.send(json.dumps(subscribe_message))
-        response = await self._wait_for_response(market_type, request_id)
-        
-        if response.get("result") is None:
-            self.subscriptions[market_type].update(stream)
-            self.logger.info(f"Successfully subscribed to {market_type}: {symbol}")
-        else:
-            self.logger.error(f"Subscription failed: {response}")
-            
-    async def unsubscribe(self, params: Union[str, List[str]], request_id: int = 312):
-        """
-        取消訂閱一個或多個串流
-        """
-        if not self.is_connected:
-            self.logger.warning("No connection established")
-            return
-            
-        if isinstance(params, str):
-            params = [params]
-            
-        unsubscribe_message = {
-            "method": "UNSUBSCRIBE",
-            "params": params,
-            "id": request_id
-        }
-        
-        await self.websocket.send(json.dumps(unsubscribe_message))
-        response = await self._wait_for_response(request_id)
-        
-        self.subscriptions.difference_update(params)
-        if response.get("result") is None:
-            self.logger.info(f"Successfully unsubscribed from: {params}")
-        else:
-            self.logger.error(f"Unsubscription failed: {response}")
-    
-    async def list_subscriptions(self):
-        """
-        列出所有市場的訂閱
-        """
-        for market_type, subs in self.subscriptions.items():
-            self.logger.info(f"Streams subscribed for {market_type}: {list(subs)}")
-            
-    async def set_property(self, property_name: str, value: any, request_id: int = 5):
-        """
-        設置 WebSocket 屬性
-        """
-        if not self.is_connected:
-            self.logger.warning("No connection established")
-            return
-            
-        set_property_message = {
-            "method": "SET_PROPERTY",
-            "params": [property_name, value],
-            "id": request_id
-        }
-        
-        await self.websocket.send(json.dumps(set_property_message))
-        response = await self._wait_for_response(request_id)
-        self.logger.info(f"Property setting result: {response}")
-    
-    async def get_property(self, property_name: str, request_id: int = 2):
-        """
-        獲取 WebSocket 屬性
-        """
-        if not self.is_connected:
-            self.logger.warning("No connection established")
-            return
-            
-        get_property_message = {
-            "method": "GET_PROPERTY",
-            "params": [property_name],
-            "id": request_id
-        }
-        
-        await self.websocket.send(json.dumps(get_property_message))
-        response = await self._wait_for_response(request_id)
-        
-        if "result" in response:
-            self.logger.info(f"Property value: {response['result']}")
-            return response['result']
-        else:
-            self.logger.error(f"Failed to get property: {response}")
-            
     def _map_format(self, market_type: str, data: dict):
-        """
-        將數據映射成統一格式
-        """
-        
+        # 原有的資料格式轉換邏輯保持不變
         event_type = data.get("e")
         symbol = data.get("s").lower()
         stream_type = data.get("e").lower()
@@ -209,8 +167,6 @@ class BinanceWebSocket(ExchangeWebSocket):
         format_map = {
             "aggTrade": self._format_agg_trade,
             "trade": self._format_trade,
-            # "kline": self._format_kline,
-            # "depth": self._format_depth
         }
         
         handler = format_map.get(event_type)
@@ -243,21 +199,10 @@ class BinanceWebSocket(ExchangeWebSocket):
             "side": "sell" if data["m"] else "buy",
             "tradeId": data["t"]
         }
-
-    async def on_messages(self) -> None:
-        """
-        同時接收所有市場的訊息，並發送到 Kafka
-        """
-        if not self.connections:
-            self.logger.warning("No connections established")
-            return
-        
-        async for market_type, data in self._receive_all():
-            topic, mapped_data = self._map_format(market_type, data)
-            self.redis_producer.publish(topic, json.dumps(mapped_data))
             
-    def __del__(self):
-        """
-        清理資源
-        """
+    async def close(self):
+        """關閉所有連接"""
+        await super().close()
+        
+        # 關閉 Redis 連接
         self.redis_producer.close()
