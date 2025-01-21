@@ -15,6 +15,7 @@ class WebSocketConnection:
     uri: str
     created_at: datetime
     closed: bool = False
+    reconnect_interval: float = 23.5 * 3600  # 預設24小時重連
 
 class WebSocketManager:
     """ 基礎的 WebSocket 連線管理器，負責處理：
@@ -31,12 +32,14 @@ class WebSocketManager:
         self._connection_updates = asyncio.Queue()
         self._update_event = asyncio.Event()
         self._active_tasks: Set[asyncio.Task] = set()
+        self._reconnect_task = None
 
     async def start(self):
         """啟動主要接收循環"""
         if self.main_task is None or self.main_task.done():
             self.running = True
             self.main_task = asyncio.create_task(self._main_receive_loop())
+            self._reconnect_task = asyncio.create_task(self._check_reconnect())
             self.logger.info("Started main receive loop")
 
     def _create_task(self, coro) -> asyncio.Task:
@@ -45,6 +48,46 @@ class WebSocketManager:
         self._active_tasks.add(task)
         task.add_done_callback(self._active_tasks.discard)
         return task
+    
+    async def _check_reconnect(self):
+        """檢查並執行重連的監控任務"""
+        while self.running:
+            try:
+                current_time = datetime.now()
+                for conn_id, conn in list(self.connections.items()):
+                    if not conn.closed:
+                        elapsed_time = (current_time - conn.created_at).total_seconds()
+                        if elapsed_time >= conn.reconnect_interval:
+                            self.logger.info(f"Connection {conn_id} needs reconnection after {elapsed_time} seconds")
+                            await self.reconnect(conn_id)
+            except Exception as e:
+                self.logger.error(f"Error in reconnect monitor: {e}")
+            
+            await asyncio.sleep(1)  # 每秒檢查一次
+            
+    async def reconnect(self, connection_id: str):
+        """重新建立指定的連線"""
+        if connection_id not in self.connections:
+            raise ValueError(f"Connection {connection_id} not found")
+
+        conn = self.connections[connection_id]
+        uri = conn.uri
+        reconnect_interval = conn.reconnect_interval
+
+        try:
+            # 先移除舊連線
+            await self.remove_connection(connection_id)
+            
+            # 重新建立連線
+            await self.add_connection(
+                uri=uri,
+                connection_id=connection_id,
+                reconnect_interval=reconnect_interval
+            )
+            
+            self.logger.info(f"Successfully reconnected {connection_id}")
+        except Exception as e:
+            self.logger.error(f"Failed to reconnect {connection_id}: {e}")
 
     async def _main_receive_loop(self):
         """事件驅動的主循環"""
@@ -124,7 +167,7 @@ class WebSocketManager:
             if not conn.closed:
                 await self.remove_connection(connection_id)
 
-    async def add_connection(self, uri: str, connection_id: str) -> str:
+    async def add_connection(self, uri: str, connection_id: str, reconnect_interval: float = 23.5 * 3600) -> str:
         """添加新的 WebSocket 連接"""
         if connection_id in self.connections:
             await self.remove_connection(connection_id)
@@ -135,7 +178,8 @@ class WebSocketManager:
                 ws=ws,
                 uri=uri,
                 created_at=datetime.now(),
-                closed=False
+                closed=False,
+                reconnect_interval=reconnect_interval
             )
 
             await self._connection_updates.put((connection_id, "add"))
@@ -190,6 +234,9 @@ class WebSocketManager:
         """關閉所有連接及主循環"""
         self.running = False
         self._update_event.set()
+        
+        if self._reconnect_task:
+            self._reconnect_task.cancel()
 
         # 取消所有活動任務
         for task in self._active_tasks:
@@ -214,44 +261,3 @@ class WebSocketManager:
             }
             for conn_id, conn in self.connections.items()
         }
-
-async def example_callback(connection_id: str, message: str):
-    """示例回調函數"""
-    print(f"收到來自 {connection_id} 的消息: {message}")
-
-async def main():
-    logging.basicConfig(level=logging.INFO)
-    
-    manager = WebSocketManager()
-    manager.set_message_callback(example_callback)
-    
-    await manager.start()
-    
-    try:
-        print("\n添加初始連接...")
-        await manager.add_connection("wss://ws.postman-echo.com/raw", "echo1")
-        await manager.add_connection("wss://ws.postman-echo.com/raw", "echo2")
-        
-        await manager.send_message("echo1", "測試消息 1")
-        await manager.send_message("echo2", "測試消息 2")
-        
-        await asyncio.sleep(1)
-        
-        print("\n移除 echo1...")
-        await manager.remove_connection("echo1")
-        
-        await asyncio.sleep(1)
-        
-        print("\n添加新連接 echo3...")
-        await manager.add_connection("wss://ws.postman-echo.com/raw", "echo3")
-        await manager.send_message("echo2", "測試消息 3")
-        await manager.send_message("echo3", "測試消息 4")
-        
-        await asyncio.sleep(2)
-        
-    finally:
-        print("\n關閉所有連接...")
-        await manager.close_all()
-
-if __name__ == "__main__":
-    asyncio.run(main())
