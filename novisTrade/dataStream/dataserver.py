@@ -34,6 +34,7 @@ class DataStreamServer:
         
         # subscription for exchange api
         self.exchange_connections: Dict[str, ExchangeWebSocket] = {}
+        self.running_tasks: Dict[str, asyncio.Task] = {}
         
         self.redis_consumer = redis.Redis(
             host="localhost",
@@ -190,6 +191,27 @@ class DataStreamServer:
     def _validate_request(self, request: Dict[str, Any]) -> bool:
         return True
     
+    async def _handle_exchange_message(self, exchange: str, ws: ExchangeWebSocket):
+        try:
+            while True:
+                await ws.on_messages()
+        except Exception as e:
+            self.logger.error(f"Error handling messages for {exchange}: {str(e)}")
+            if exchange in self.running_tasks:
+                del self.running_tasks[exchange]
+            raise
+        
+    async def _ensure_ws_task(self, exchange: str, ws: ExchangeWebSocket):
+        """確保交易所 websocket 任務正在運行"""
+        if exchange not in self.running_tasks:
+            task = self.running_tasks[exchange]
+            if not task.done():
+                return
+            del self.running_tasks[exchange]
+            
+        task = asyncio.create_task(self._handle_exchange_message(exchange, ws))
+        self.running_tasks[exchange] = task
+    
     async def _handle_subscribe(self, request: Dict[str, Any]) -> Dict[str, Any]:
         """
         TODO: request 中的 symbol 和 stream_type 要不要直接傳入 stream?
@@ -212,7 +234,7 @@ class DataStreamServer:
             try:
                 exchange_ws = self.get_exchange_connection(exchange)
                 await exchange_ws.subscribe(symbol, stream_type, market_type)
-                asyncio.create_task(exchange_ws.on_messages())
+                await self._ensure_ws_task(exchange, exchange_ws)
                 # TODO: 這邊如果 client 有兩個以上，就會出錯
                 
             except Exception as e:
