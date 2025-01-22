@@ -1,7 +1,7 @@
 import json
 import redis
 from typing import List, Union
-from novisTrade.dataStream.exchanges.base_ws import ExchangeWebSocket
+from .base_ws import ExchangeWebSocket
 
 class BinanceWebSocket(ExchangeWebSocket):
     def __init__(self):
@@ -20,7 +20,8 @@ class BinanceWebSocket(ExchangeWebSocket):
         urls = {
             "spot": "wss://stream.binance.com:9443/ws",
             "perp": "wss://fstream.binance.com/ws",
-            "coin-m": "wss://dstream.binance.com/ws"
+            "coin-m": "wss://dstream.binance.com/ws",
+            "user": "wss://stream.binance.com:9443/ws",
         }
         return urls.get(market_type, urls["spot"])
         

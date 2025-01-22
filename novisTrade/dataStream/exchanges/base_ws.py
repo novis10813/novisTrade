@@ -1,10 +1,7 @@
-import json
 import logging
-import asyncio
-import websockets
 
 from abc import ABC, abstractmethod
-from typing import List, Union, Optional
+from typing import List, Union
 
 from .ws_manager import WebSocketManager
 
