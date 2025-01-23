@@ -1,22 +1,17 @@
 import json
 import uuid
-import redis
+import asyncio
 import logging
 import asyncio
 import websockets
+import websockets.asyncio.client
+import websockets.asyncio.server
 
-from abc import abstractmethod, ABC
-from typing import Any, Dict, List, Optional, Union, Tuple, Set
+from typing import Any, Dict, List, Optional, Set
+from collections import defaultdict
 
 from .exchanges.base_ws import ExchangeWebSocket
 from .exchanges.exchange_factory import ExchangeWebSocketFactory
-
-
-class Subscriber(ABC):
-    @abstractmethod
-    def on_message(self, message: Dict[str, Any]) -> None:
-        pass
-
 
 class DataStreamServer:
     def __init__(
@@ -35,18 +30,11 @@ class DataStreamServer:
         # subscription for exchange api
         self.exchange_connections: Dict[str, ExchangeWebSocket] = {}
         self.running_tasks: Dict[str, asyncio.Task] = {}
-        
-        self.redis_consumer = redis.Redis(
-            host="localhost",
-            port=6379,
-            db=0,
-            decode_responses=True
-        )
-        self.pubsub = self.redis_consumer.pubsub()
-        
-        # subscription for client
-        self.subscriptions : Dict[Tuple[str, str, str], Set] = {}
-        self.client_connections: Dict[str, websockets.WebSocketServerProtocol] = {}
+                
+        # 紀錄每個 client 訂閱了哪些交易所的哪些交易對有多少人訂閱
+        self.client_subscriptions: Dict[str, Set[str]] = {}
+        # 保存每個 client 的連線
+        self.client_connections: Dict[str, websockets.asyncio.client.ClientConnection] = {}
         
         # async state tracks
         self.is_listening = False
@@ -68,233 +56,318 @@ class DataStreamServer:
         self.logger.info(f"Server started at `{self.host}` port {self.port}")
         
         # tasks
-        await asyncio.gather(
-            self.listen_to_redis(),
-            self.server.wait_closed()
-        )
+        try:
+            await self.server.wait_closed()
+        except (asyncio.CancelledError, KeyboardInterrupt):
+            self.logger.info("Shutting down server...")
+            await self.close()
 
-    def close(self):
-        """關閉服務器"""
+    async def close(self):
+        """清理所有資源"""
+        # 關閉所有客戶端連接
+        # 先複製一份字典的條目
+        client_connections = list(self.client_connections.items())
+        # 關閉所有客戶端連接
+        for client_id, websocket in client_connections:
+            await websocket.close()
+            
+        # 關閉所有交易所連接
+        for exchange_ws in self.exchange_connections.values():
+            await exchange_ws.close()
+        
+        # 關閉 server
         if self.server:
             self.server.close()
-        self.logger.info("Server closed")
-    
-    async def _handle_exchange_connection(self, websocket: websockets.WebSocketServerProtocol, path: str):
-        pass
-    
-    async def subscribe_to_redis(self, channel: str):
-        self.pubsub.subscribe(channel)
-        
-    async def unsubscribe_from_redis(self, channel: str):
-        self.pubsub.unsubscribe(channel)
-        
-    async def listen_to_redis(self):
-        while True:
-            message = self.pubsub.get_message()
-            if message and message['type'] == 'message':
-                data = json.loads(message['data'])
-                topic = message['channel']
-                
-                exchange, market_type, symbol, stream_type = topic.split(':')
-                await self.broadcast(exchange, symbol, stream_type, data)
-            await asyncio.sleep(0.001) #TODO: 透過 aioredis 寫成非同步的方式，不要用 sleep
-                
-    def get_exchange_connection(self, exchange_name: str) -> ExchangeWebSocket:
-        """獲取或創建交易所連接"""
-        if exchange_name not in self.exchange_connections:
-            try:
-                self.exchange_connections[exchange_name] = ExchangeWebSocketFactory.create(exchange_name)
-            except ValueError as e:
-                self.logger.error(f"Failed to create exchange connection: {e}")
-                raise
-        return self.exchange_connections[exchange_name]
-    
-    async def _handle_client_connection(self, websocket: websockets.WebSocketServerProtocol, path: str = '/'):
-        """處理和 client 端的連線以及訊息"""
-        try:
-            client_id = str(uuid.uuid4())
-            self.client_connections[client_id] = websocket
             
-            async for message in websocket:
-                request = json.loads(message)
-                request['client_id'] = client_id
-                response = await self._handle_request(request)
-                await websocket.send(json.dumps(response))
-                
-        except websockets.exceptions.ConnectionClosed:
-            if client_id in self.client_connections:
-                del self.client_connections[client_id]
-            self.logger.info("Client connection closed")
+        self.logger.info("All resources cleaned up")
             
-            for key in list(self.subscriptions.keys()):
-                if client_id in self.subscriptions[key]:
-                    self.subscriptions[key].discard(client_id)
-                    if not self.subscriptions[key]:
-                        del self.subscriptions[key]
-            
-        except json.JSONDecodeError:
-            await websocket.send(json.dumps({
-                'success': False,
-                'message': 'Invalid JSON format'
-            }))
-            
-        except Exception as e:
-            await websocket.send(json.dumps({
-                'success': False,
-                'message': f'Error processing request: {str(e)}'
-            }))
-    
-    async def _handle_request(self, request: Dict[str, Any]) -> Dict[str, Any]:
-        """處理來自 client 的請求
-        Args:
-            request (dict): 請求內容,包含:
-                - action: 動作類型 (subscribe/unsubscribe/query)
-                - exchange: 交易所名稱
-                - symbol: 交易對名稱
-                - client_id: 客戶端 ID
-                
-        Returns:
-            dict: 回應內容,包含:
-                - success: 是否成功
-                - message: 訊息
-                - data: 回應資料 (選填)
+    async def _handle_client_connection(self, websocket: websockets.asyncio.server.ServerConnection, path: str = '/'):
+        """WebSocket Server 的 Entry Point
+        這邊主要有三個邏輯:
+        1. 新的 client 連線時要處理的東西
+        2. 處理來自 client 的請求
+        3. client 斷線時要處理的東西
         """
         try:
-            # 驗證請求格式
-            if not self._validate_request(request):
-                return {
-                    'success': False,  
-                    'message': 'Invalid request format'
-                }
-                
-            # TODO: 我覺得這邊可以改成在交易所 websocket 裡面直接實作對應的 method
-            # 像 Binance 就有 subscribe, unsubscribe, get_property, set_property 等 method
-            action = request.get('action')
+            client_id = await self.__new_client_connection(websocket)
+            
+            async for message in websocket:
+                await self.__handle_request(client_id, message)
+        
+        except websockets.exceptions.ConnectionClosed:
+            self.logger.info(f"Client connection closed: {client_id}")
+            
+        except Exception as e:
+            self.logger.error(f"Error in client connection: {str(e)}")
+            
+        finally:
+            if client_id:
+                await self.__handle_disconnection(client_id)
+                    
+    async def __new_client_connection(self, websocket: websockets.asyncio.client.ClientConnection) -> str:
+        """有新的 client 連線時要處理的東西
+        1. 處理 client_id
+        2. 紀錄 client 連線
+        # THINK: 我連線的時候能夠直接指定 client_id 嗎？
+        """
+        client_id = str(uuid.uuid4())
+        self.client_connections[client_id] = websocket
+        
+        await websocket.send(json.dumps({
+            "type": "connection",
+            "client_id": client_id
+        }))
+        
+        self.logger.info(f"New client connected: {client_id}")
+        return client_id
+    
+    async def __handle_request(self, client_id: str, message: Dict[str, Any]):
+        """處理來自 client 的請求
+        Args:
+            client_id (str): 客戶端 ID
+            message (dict): 請求內容，包含:
+                - action: 請求類型 (subscribe/unsubscribe/query...)
+        """
+        try:
+            parsed_message = self._validate_message(message)
+            action = parsed_message.get('action')
             if action == 'subscribe':
-                return await self._handle_subscribe(request)
-            elif action == 'unsubscribe': 
-                return await self._handle_unsubscribe(request)
-            elif action == 'query':
-                return await self._handle_query(request)
+                response = await self._handle_subscribe(parsed_message)
+            elif action == 'unsubscribe':
+                response = await self._handle_unsubscribe(parsed_message)
             else:
-                return {
+                response = {
                     'success': False,
                     'message': f'Unknown action: {action}'
                 }
+                self.logger.warning(f"Unknown action from client {client_id}: {action}")
+                await self.client_connections[client_id].send(json.dumps(response))
                 
+        except json.JSONDecodeError:
+            response = {
+                'success': False,
+                'message': 'Invalid JSON format'
+            }
+            self.logger.warning(f"Invalid JSON format from client {client_id}: {message}")
+            await self.client_connections[client_id].send(json.dumps(response))
+            
         except Exception as e:
-            return {
+            response = {
                 'success': False,
                 'message': f'Error processing request: {str(e)}'
             }
-            
-    def _validate_request(self, request: Dict[str, Any]) -> bool:
-        return True
-    
-    async def _handle_exchange_message(self, exchange: str, ws: ExchangeWebSocket):
-        try:
-            while True:
-                await ws.on_messages()
-        except Exception as e:
-            self.logger.error(f"Error handling messages for {exchange}: {str(e)}")
-            if exchange in self.running_tasks:
-                del self.running_tasks[exchange]
-            raise
+            self.logger.error(f"Error processing request from client {client_id}: {str(e)}")
+            await self.client_connections[client_id].send(response)
         
-    async def _ensure_ws_task(self, exchange: str, ws: ExchangeWebSocket):
-        """確保交易所 websocket 任務正在運行"""
-        if exchange not in self.running_tasks:
-            task = self.running_tasks[exchange]
-            if not task.done():
-                return
-            del self.running_tasks[exchange]
+    async def __handle_disconnection(self, client_id: str):
+        # 移除 client 連線
+        if client_id in self.client_connections:
+            await self.client_connections[client_id].close()
+            del self.client_connections[client_id]
+        
+        # 移除 client 的訂閱 key
+        for key in list(self.client_subscriptions.keys()):
+            exchange, market_type, symbol, stream_type = key.split(':')
+            if client_id in self.client_subscriptions[key]:
+                self.client_subscriptions[key].remove(client_id)
+                if not self.client_subscriptions[key]:
+                    exchange_ws = await self._get_exchange_connection(exchange)
+                    await exchange_ws.unsubscribe([symbol], stream_type, market_type, client_id)
+                    del self.client_subscriptions[key]
+        pass
             
-        task = asyncio.create_task(self._handle_exchange_message(exchange, ws))
-        self.running_tasks[exchange] = task
-    
+        self.logger.info(f"Client disconnected: {client_id}, cleaning up completed")
+            
+    def _validate_message(self, message: Dict[str, Any]) -> Dict[str, Any]:
+        """驗證來自 client 的請求
+        
+        Args:
+            message (dict): 請求內容
+            
+        Returns:
+            解析後的請求內容
+            
+        Raises:
+            json.JSONDecodeError: 無法解析錯誤
+            ValueError: 格式錯誤
+        """
+        data = json.loads(message)
+        
+        require_fieds = ['action', 'params', 'client_id']
+        missing_fields = [f for f in require_fieds if f not in data]
+        if missing_fields:
+            raise ValueError(f"Missing required fields: {missing_fields}")
+        
+        return data
+            
     async def _handle_subscribe(self, request: Dict[str, Any]) -> Dict[str, Any]:
+        """處理訂閱請求
+        處理步驟:
+        1. 解析 request (應該放在交易所端處理即可)
+        2. 獲取交易所連接
+        3. 如果成功，建立聽取交易所 websocket.on_messages 的 task
+        4. 紀錄是誰訂閱、這個交易對有多少人訂閱
         """
-        TODO: request 中的 symbol 和 stream_type 要不要直接傳入 stream?
-        """
-        try:
-            if not all(k in request for k in ['exchange', 'symbol', 'market_type', 'client_id']):
-                return {
-                    'success': False,
-                    'message': 'Missing required fields'
-                }
-                
-            #TODO symbol 可能是一個 list
-            exchange = request['exchange']
-            symbol = request['symbol']
-            market_type = request.get('market_type', 'spot')
-            stream_type = request.get('stream_type', 'trade')
-            client_id = request['client_id']
-            
-            # 獲取交易所連接
+        # 解析 request
+        parsed_requests = self._parse_subscription_request(request["params"])
+        client_id = request.get('client_id')
+        for parsed_request in parsed_requests:
             try:
-                exchange_ws = self.get_exchange_connection(exchange)
-                await exchange_ws.subscribe(symbol, stream_type, market_type)
-                await self._ensure_ws_task(exchange, exchange_ws)
-                # TODO: 這邊如果 client 有兩個以上，就會出錯
+                exchange = parsed_request['exchange']
+                market_type = parsed_request['market_type']
+                stream_type = parsed_request['stream_type']
+                symbols = parsed_request['symbol']
+                request_id = parsed_request.get('request_id', client_id)
                 
+                # 獲取交易所連接
+                exchange_ws = await self._get_exchange_connection(exchange)
+                # 把 symbols 分成已經訂閱的和沒有訂閱的
+                # 如果有沒有訂閱的，就訂閱
+                
+                # 檢查該交易所是否已經訂閱，回傳沒有訂閱的 symbol
+                not_sub_symbols = exchange_ws.is_subscribed(symbols, stream_type, market_type)
+                # 如果沒有未訂閱的 symbol，就不用訂閱
+                if not not_sub_symbols:
+                    continue
+                
+                # 反之，就訂閱
+                is_success = await exchange_ws.subscribe(not_sub_symbols, stream_type, market_type, request_id)
+                # 如果成功，就在 client_subscriptions 裡面記錄
+                if is_success:
+                    for symbol in symbols:
+                        if symbol not in self.client_subscriptions:
+                            key = f"{exchange}:{market_type}:{symbol}:{stream_type}"
+                            self.client_subscriptions[key] = set()
+                        self.client_subscriptions[key].add(client_id)
+                # 這個時候 redis 的 producer 就已經有資料進來了，所以 consumer 應該放在 client 端，而不是 server 端
+                # 所以訂閱 redis consumer 的部分應該放在 client 端
+                else:
+                    return {
+                        'success': False,
+                        'message': f"Failed to subscribe to {exchange}: {str(e)}"
+                    }
             except Exception as e:
                 return {
                     'success': False,
                     'message': f"Failed to subscribe to {exchange}: {str(e)}"
                 }
-            
-            # 訂閱相關的 redis channel
-            channel = f"{exchange}:{market_type}:{symbol}:{stream_type}"
-            await self.subscribe_to_redis(channel)
-            
-            subscription_key = (exchange, symbol, stream_type)
-            if subscription_key not in self.subscriptions:
-                self.subscriptions[subscription_key] = set()
-            self.subscriptions[subscription_key].add(client_id)
-            
-            return {
-                'success': True,
-                'message': f"Subscribed to {exchange} {symbol}@{stream_type}"
-            }
         
-        except Exception as e:
-            self.logger.error(f"Error in `_handle_subscribe`: {str(e)}")
-            return {
-                'success': False,
-                'message': f"Error processing request: {str(e)}"
-            }
+        return {
+            'success': True,
+            'message': 'Successfully subscribed'
+        }
+            
+    def _parse_subscription_request(self, params: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """解析訂閱請求
+        
+        訂閱請求應該包含以下欄位:
+        - exchange (str): 交易所名稱
+        - streams (list): 訂閱的串流類型
+        - market_type (str): 市場類型
+        """
+        # 使用巢狀的 defaultdict 來組織數據
+        grouped_data = defaultdict(
+            lambda: defaultdict(
+                lambda: defaultdict(list)
+            )
+        )
+
+        for param in params:
+            parts = param.split(':')
+            if len(parts) < 4:
+                continue
+            
+            exchange = parts[0]
+            market_type = parts[1]
+            symbol = parts[2]
+            stream_type = parts[3]
+            
+            # 將 symbol 加入到對應的分類中
+            grouped_data[exchange][market_type][stream_type].append(symbol)
+
+        # 轉換成最終格式
+        result = []
+        for exchange, market_types in grouped_data.items():
+            for market_type, stream_types in market_types.items():
+                for stream_type, symbols in stream_types.items():
+                    result.append({
+                        'exchange': exchange,
+                        'market_type': market_type,
+                        'stream_type': stream_type,
+                        'symbol': symbols
+                    })
+                
+        return result
+    
+    async def _get_exchange_connection(self, exchange_name: str) -> ExchangeWebSocket:
+        """獲取或創建交易所連接"""
+        if exchange_name not in self.exchange_connections:
+            try:
+                exchange_ws = ExchangeWebSocketFactory.create(exchange_name)
+                await exchange_ws.start()
+                self.exchange_connections[exchange_name] = exchange_ws
+            except ValueError as e:
+                self.logger.error(f"Failed to create exchange connection: {e}")
+                raise
+        return self.exchange_connections[exchange_name]
     
     async def _handle_unsubscribe(self, request: Dict[str, Any]) -> Dict[str, Any]:
-        pass
-    
-    async def _handle_query(self, request: Dict[str, Any]) -> Dict[str, Any]:
-        pass
-    
-    async def _format_message(self, message: Dict[str, Any]) -> str:
-        pass
-    
-    def add_subscription(self, exchange: str, symbol: str, data_type: str, subscriber: Subscriber) -> None:
-        key = (exchange, symbol, data_type)
-        if key not in self.subscriptions:
-            self.subscriptions[key] = set()
-        self.subscriptions[key].add(subscriber)
+        """處理取消訂閱請求
+        處理步驟:
+        1. 解析 request
+        2. 獲取交易所連接
+        3. 如果成功，取消訂閱
+        4. 更新 client_subscriptions
+        """
+        # 格式和訂閱請求一樣
+        parsed_requests = self._parse_subscription_request(request["params"])
+        client_id = request.get('client_id')
         
-    def remove_subscription(self, exchange: str, symbol: str, data_type: str, subscriber: Subscriber) -> None:
-        key = (exchange, symbol, data_type)
-        if key in self.subscriptions:
-            self.subscriptions[key].discard(subscriber)
-            
-    def get_subscribers(self, exchange: str, symbol: str, data_type: str) -> Set:
-        key = (exchange, symbol, data_type)
-        return self.subscriptions.get(key, set())
+        for parsed_request in parsed_requests:
+            try:
+                exchange = parsed_request['exchange']
+                market_type = parsed_request['market_type']
+                stream_type = parsed_request['stream_type']
+                symbols = parsed_request['symbol']
+                request_id = parsed_request.get('request_id', client_id)
+                
+                # 獲取交易所連接
+                exchange_ws = await self._get_exchange_connection(exchange)
+                
+                # 取消訂閱只發生在 self.client_subscriptions 的最後一個 client 取消訂閱的時候
+                not_sub_symbols = exchange_ws.is_subscribed(symbols, stream_type, market_type)
+                # 實際上要取消訂閱的 symbol
+                sub_symbols = list(set(symbols) - set(not_sub_symbols))
+                for symbol in sub_symbols:
+                    key = f"{exchange}:{market_type}:{symbol}:{stream_type}"
+                    self.client_subscriptions[key].remove(client_id)
+                    # 如果沒有人訂閱了，就取消訂閱
+                    if not self.client_subscriptions[key]:
+                        await exchange_ws.unsubscribe([symbols], stream_type, market_type, request_id)
+                        del self.client_subscriptions[key]
+                        
+            except Exception as e:
+                return {
+                    'success': False,
+                    'message': f"Failed to unsubscribe to {exchange}: {str(e)}"
+                }
+                
+        return {
+            'success': True,
+            'message': 'Successfully unsubscribed'
+        }
+
+async def main():
+    # 創建 server 實例
+    server = DataStreamServer(host='localhost', port=8765)
     
-    async def broadcast(self, exchange: str, symbol: str, stream_type: str, data: Dict[str, Any]):
-        # TODO: 更有效率的 broadcast
-        subscriptions_key = (exchange, symbol, stream_type)
-        if subscriptions_key in self.subscriptions:
-            for client_id in self.subscriptions[subscriptions_key]:
-                try:
-                    if client_id in self.client_connections:
-                        await self.client_connections[client_id].send(json.dumps(data))
-                except Exception as e:
-                    self.logger.error(f"Failed to send to client {client_id}: {str(e)}")
+    try:
+        await server.start()
+    except KeyboardInterrupt:
+        print("正在關閉伺服器...")
+    except Exception as e:
+        print(f"發生錯誤: {e}")
+        await server.close()
+
+if __name__ == "__main__":
+    asyncio.run(main())

@@ -55,21 +55,21 @@ class BinanceWebSocket(ExchangeWebSocket):
             
     async def subscribe(
         self,
-        streams: Union[str, List[str]],
+        symbols: List[str],
+        stream_type: str,
         market_type: str = "spot",
         request_id: int = 1
     ) -> bool:
         """訂閱指定市場的串流"""
-        if isinstance(streams, str):
-            streams = [streams]
-            
+        streams = [f"{symbol}@{stream_type}" for symbol in symbols]
+        
         # 建立連接 ID
         connection_id = f"{market_type}:main"
         
         # 如果尚未建立連接
         if connection_id not in self.ws_manager.connections:
             try:
-                url = f"{self._get_base_url(market_type)}/{streams[0]}"
+                url = f"{self._get_base_url(market_type)}"
                 await self.ws_manager.add_connection(url, connection_id)
             except Exception as e:
                 self.logger.error(f"Failed to establish connection: {str(e)}")
@@ -91,8 +91,8 @@ class BinanceWebSocket(ExchangeWebSocket):
             # 更新訂閱記錄
             if market_type not in self.subscriptions:
                 self.subscriptions[market_type] = set()
-            self.subscriptions[market_type].update(streams)
-            
+            for symbol in symbols:
+                self.subscriptions[market_type].add(f"{symbol}@{stream_type}")
             self.logger.info(f"Successfully subscribed to {market_type}: {streams}")
             return True
             
@@ -102,19 +102,15 @@ class BinanceWebSocket(ExchangeWebSocket):
         
     async def unsubscribe(
         self,
-        streams: Union[str, List[str]],
+        symbols: List[str],
+        stream_type: str,
         market_type: str = "spot",
         request_id: int = 312
     ):
         """取消訂閱一個或多個串流"""
-        if isinstance(streams, str):
-            streams = [streams]
+        streams = [f"{symbol}@{stream_type}" for symbol in symbols]
             
         connection_id = f"{market_type}:main"
-        
-        if connection_id not in self.ws_manager.connections:
-            self.logger.warning(f"No connection found for {connection_id}")
-            return
             
         unsubscribe_message = {
             "method": "UNSUBSCRIBE",
@@ -132,6 +128,13 @@ class BinanceWebSocket(ExchangeWebSocket):
             if market_type not in self.subscriptions:
                 self.subscriptions[market_type] = set()
             self.subscriptions[market_type].difference_update(streams)
+            
+            if not self.subscriptions[market_type]:
+                if await self.ws_manager.remove_connection(connection_id):
+                    del self.subscriptions[market_type]
+                else:
+                    self.logger.error(f"Failed to remove connection: {connection_id}")
+                    return False
             
             self.logger.info(f"Successfully unsubscribed from {market_type}: {streams}")
             return True
@@ -156,13 +159,14 @@ class BinanceWebSocket(ExchangeWebSocket):
             return False
             
         # 重新訂閱
+        # TODO: 更新了 subscribe 後這邊要重寫，原本是 (stream_type, market_type)
         return await self.subscribe(subscriptions[0], market_type)
         
     def _map_format(self, market_type: str, data: dict):
         # 原有的資料格式轉換邏輯保持不變
         event_type = data.get("e")
         symbol = data.get("s").lower()
-        stream_type = data.get("e").lower()
+        stream_type = data.get("e")
         topic = self._get_topic_name(symbol, stream_type, market_type)
         
         format_map = {

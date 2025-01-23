@@ -1,7 +1,7 @@
 import logging
 
 from abc import ABC, abstractmethod
-from typing import List, Union
+from typing import List, Union, Dict, Set
 
 from .ws_manager import WebSocketManager
 
@@ -21,7 +21,7 @@ class ExchangeWebSocket(ABC):
         
         self.ws_manager = WebSocketManager()
         self.connections = {}
-        self.subscriptions = {}
+        self.subscriptions: Dict[str, Set] = {}
         
     async def start(self):
         """啟動 WebSocket 管理器"""
@@ -35,16 +35,20 @@ class ExchangeWebSocket(ABC):
     @abstractmethod
     async def subscribe(
         self,
-        streams: Union[str, List[str]],
+        symbols: List[str],
+        stream_type: str,
         market_type: str = "spot",
+        request_id: str = "1"
     ) -> bool:
         raise NotImplementedError
     
     @abstractmethod
     async def unsubscribe(
         self,
-        streams: Union[str, List[str]],
+        symbols: List[str],
+        stream_type: str,
         market_type: str = "spot",
+        request_id: str = "1"
     ) -> bool:
         raise NotImplementedError
     
@@ -55,3 +59,20 @@ class ExchangeWebSocket(ABC):
     async def close(self):
         """關閉 WebSocket 管理器"""
         await self.ws_manager.close()
+        
+    def is_subscribed(self, symbols, stream_type, market_type) -> List[str]:
+        """回傳沒有訂閱的 symbols
+        subscriptions 的格式如下:
+        self.subscriptions[market_type].add(f"{symbol}@{stream_type}")
+        1. 透過 subscriptions 取得已經訂閱的 symbols
+        2. 如果 symbols 沒有對應的 stream_type，則回傳該 symbol
+        """
+        not_subscribed = []
+        if market_type not in self.subscriptions:
+            return symbols
+        
+        for symbol in symbols:
+            if f"{symbol}@{stream_type}" not in self.subscriptions.get(market_type, set()):
+                not_subscribed.append(symbol)
+        
+        return not_subscribed
