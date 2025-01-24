@@ -23,9 +23,8 @@ class WebSocketManager:
     - 訊息的接收和發送
     - 錯誤處理和重連邏輯
     """
-    def __init__(self):
+    def __init__(self, level: int = logging.INFO):
         self.connections: Dict[str, WebSocketConnection] = {}
-        self.logger = logging.getLogger(__name__)
         self.running = True
         self.message_callback = None
         self.main_task = None
@@ -33,6 +32,16 @@ class WebSocketManager:
         self._update_event = asyncio.Event()
         self._active_tasks: Set[asyncio.Task] = set()
         self._reconnect_task = None
+        
+        self._setup_logger(level=level)
+        
+    def _setup_logger(self, level: int = logging.INFO):
+        """設置 Logger 等級"""
+        self.logger = logging.getLogger(__name__)
+        self.logger.setLevel(level)
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+        self.logger.addHandler(handler)
 
     async def start(self):
         """啟動主要接收循環"""
@@ -84,6 +93,9 @@ class WebSocketManager:
                 connection_id=connection_id,
                 reconnect_interval=reconnect_interval
             )
+            
+            if self.reconnect_callback:
+                await self.reconnect_callback(connection_id)
             
             self.logger.info(f"Successfully reconnected {connection_id}")
         except Exception as e:
@@ -220,6 +232,10 @@ class WebSocketManager:
     def set_message_callback(self, callback):
         """設置消息回調函數"""
         self.message_callback = callback
+        
+    def set_reconnect_callback(self, callback):
+        """設置重連回調函數"""
+        self.reconnect_callback = callback
 
     async def send_message(self, connection_id: str, message: str) -> None:
         """向指定的 WebSocket 發送消息"""
