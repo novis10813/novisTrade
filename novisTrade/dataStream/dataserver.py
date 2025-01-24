@@ -29,15 +29,14 @@ class DataStreamServer:
         
         # subscription for exchange api
         self.exchange_connections: Dict[str, ExchangeWebSocket] = {}
-        self.running_tasks: Dict[str, asyncio.Task] = {}
                 
         # 紀錄每個 client 訂閱了哪些交易所的哪些交易對有多少人訂閱
         self.client_subscriptions: Dict[str, Set[str]] = {}
         # 保存每個 client 的連線
         self.client_connections: Dict[str, websockets.asyncio.client.ClientConnection] = {}
         
-        # async state tracks
-        self.is_listening = False
+        # setup logger
+        self._setup_logger(level=self.config.get('log_level', logging.INFO))
         
     async def start(self):
         self.server = await websockets.serve(
@@ -45,13 +44,6 @@ class DataStreamServer:
             self.host,
             self.port
         )
-        
-        # init logger
-        self.logger = logging.getLogger(__name__)
-        self.logger.setLevel(logging.INFO)
-        handler = logging.StreamHandler()
-        handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
-        self.logger.addHandler(handler)
         
         self.logger.info(f"Server started at `{self.host}` port {self.port}")
         
@@ -61,21 +53,31 @@ class DataStreamServer:
         except (asyncio.CancelledError, KeyboardInterrupt):
             self.logger.info("Shutting down server...")
             await self.close()
+            
+    def _setup_logger(self, level: int = logging.INFO):
+        self.logger = logging.getLogger(__name__)
+        self.logger.setLevel(level)
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+        self.logger.addHandler(handler)
 
     async def close(self):
         """清理所有資源"""
         # 關閉所有客戶端連接
         # 先複製一份字典的條目
+        self.logger.info("Now closing all client connections...")
         client_connections = list(self.client_connections.items())
         # 關閉所有客戶端連接
         for client_id, websocket in client_connections:
             await websocket.close()
-            
+        
+        self.logger.info("Now closing all exchange connections...")
         # 關閉所有交易所連接
         for exchange_ws in self.exchange_connections.values():
             await exchange_ws.close()
         
         # 關閉 server
+        self.logger.info("Now closing server...")
         if self.server:
             self.server.close()
             
@@ -165,16 +167,28 @@ class DataStreamServer:
             await self.client_connections[client_id].close()
             del self.client_connections[client_id]
         
-        # 移除 client 的訂閱 key
+        # 移除 client 的訂閱 key,按 exchange 和 stream_type 分組
+        unsubscribe_tasks = {}
         for key in list(self.client_subscriptions.keys()):
-            exchange, market_type, symbol, stream_type = key.split(':')
             if client_id in self.client_subscriptions[key]:
+                # 先移除這個 client 的訂閱紀錄
                 self.client_subscriptions[key].remove(client_id)
+                
+                # 只有當沒有其他 client 訂閱時,才進行 unsubscribe
                 if not self.client_subscriptions[key]:
-                    exchange_ws = await self._get_exchange_connection(exchange)
-                    await exchange_ws.unsubscribe([symbol], stream_type, market_type, client_id)
+                    exchange, market_type, symbol, stream_type = key.split(':') 
+                    group_key = (exchange, market_type)
+                    if group_key not in unsubscribe_tasks:
+                        unsubscribe_tasks[group_key] = []
+                    unsubscribe_tasks[group_key].append((symbol, stream_type))
                     del self.client_subscriptions[key]
-        pass
+        
+        # 對每個 exchange 批次執行 unsubscribe
+        for (exchange, market_type), tasks in unsubscribe_tasks.items():
+            exchange_ws = await self._get_exchange_connection(exchange)
+            symbols = [t[0] for t in tasks]
+            stream_type = tasks[0][1]  # 同一組的 market_type 應該相同
+            await exchange_ws.unsubscribe(symbols, stream_type, market_type, client_id)
             
         self.logger.info(f"Client disconnected: {client_id}, cleaning up completed")
             
@@ -356,18 +370,3 @@ class DataStreamServer:
             'success': True,
             'message': 'Successfully unsubscribed'
         }
-
-async def main():
-    # 創建 server 實例
-    server = DataStreamServer(host='localhost', port=8765)
-    
-    try:
-        await server.start()
-    except KeyboardInterrupt:
-        print("正在關閉伺服器...")
-    except Exception as e:
-        print(f"發生錯誤: {e}")
-        await server.close()
-
-if __name__ == "__main__":
-    asyncio.run(main())
