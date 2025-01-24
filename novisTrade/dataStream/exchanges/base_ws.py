@@ -1,7 +1,7 @@
 import logging
 
 from abc import ABC, abstractmethod
-from typing import List, Union, Dict, Set
+from typing import List, Dict, Set
 
 from .ws_manager import WebSocketManager
 
@@ -26,10 +26,15 @@ class ExchangeWebSocket(ABC):
     async def start(self):
         """啟動 WebSocket 管理器"""
         self.ws_manager.set_message_callback(self._handle_message)
+        self.ws_manager.set_reconnect_callback(self._handle_reconnection)
         await self.ws_manager.start()
         
     @abstractmethod
     async def _handle_message(self, connection_id: str, message: str):
+        raise NotImplementedError
+    
+    @abstractmethod
+    async def _handle_reconnection(self, connection_id: str):
         raise NotImplementedError
     
     @abstractmethod

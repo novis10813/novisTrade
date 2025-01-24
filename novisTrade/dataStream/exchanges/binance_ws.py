@@ -1,6 +1,7 @@
+import time
 import json
 import redis
-from typing import List, Union
+from typing import List
 from .base_ws import ExchangeWebSocket
 
 class BinanceWebSocket(ExchangeWebSocket):
@@ -38,9 +39,8 @@ class BinanceWebSocket(ExchangeWebSocket):
                 )
                 return
                 
-            # 處理訂閱確認訊息
+            # 處理訂閱/取消訂閱確認訊息
             if "result" in data:
-                self.logger.info(f"Subscription confirmed for {connection_id}")
                 return
                 
             # 處理市場數據
@@ -52,6 +52,27 @@ class BinanceWebSocket(ExchangeWebSocket):
             
         except Exception as e:
             self.logger.error(f"Error handling message: {str(e)}")
+            
+    async def _handle_reconnection(self, connection_id: str):
+        """處理重新連接"""
+        try:
+            market_type = connection_id.split(":")[0]
+            streams = list(self.subscriptions.get(market_type, set()))
+            
+            subscribe_message = {
+                "method": "SUBSCRIBE",
+                "params": streams,
+                "id": int(time.time())
+            }
+            
+            await self.ws_manager.send_message(
+                connection_id,
+                json.dumps(subscribe_message)
+            )
+            self.logger.info(f"Restore {len(streams)} subscriptions for {market_type}")
+        
+        except Exception as e:
+            self.logger.error(f"Failed to restore subscriptions: {str(e)}")
             
     async def subscribe(
         self,
@@ -70,7 +91,7 @@ class BinanceWebSocket(ExchangeWebSocket):
         if connection_id not in self.ws_manager.connections:
             try:
                 url = f"{self._get_base_url(market_type)}"
-                await self.ws_manager.add_connection(url, connection_id)
+                await self.ws_manager.add_connection(url, connection_id, reconnect_interval=20)
             except Exception as e:
                 self.logger.error(f"Failed to establish connection: {str(e)}")
                 return False
@@ -129,38 +150,12 @@ class BinanceWebSocket(ExchangeWebSocket):
                 self.subscriptions[market_type] = set()
             self.subscriptions[market_type].difference_update(streams)
             
-            if not self.subscriptions[market_type]:
-                if await self.ws_manager.remove_connection(connection_id):
-                    del self.subscriptions[market_type]
-                else:
-                    self.logger.error(f"Failed to remove connection: {connection_id}")
-                    return False
-            
             self.logger.info(f"Successfully unsubscribed from {market_type}: {streams}")
             return True
             
         except Exception as e:
             self.logger.error(f"Unsubscription failed: {str(e)}")
             return False
-            
-    async def reconnect(self, market_type: str):
-        """重新連接指定市場"""
-        connection_id = f"{market_type}:main"
-        
-        # 先移除現有連接
-        if connection_id in self.ws_manager.connections:
-            await self.ws_manager.remove_connection(connection_id)
-            
-        # 取得該市場的訂閱列表
-        subscriptions = list(self.subscriptions.get(market_type, set()))
-        
-        if not subscriptions:
-            self.logger.warning(f"No subscriptions found for {market_type}")
-            return False
-            
-        # 重新訂閱
-        # TODO: 更新了 subscribe 後這邊要重寫，原本是 (stream_type, market_type)
-        return await self.subscribe(subscriptions[0], market_type)
         
     def _map_format(self, market_type: str, data: dict):
         # 原有的資料格式轉換邏輯保持不變
