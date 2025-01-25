@@ -91,7 +91,7 @@ class BinanceWebSocket(ExchangeWebSocket):
         if connection_id not in self.ws_manager.connections:
             try:
                 url = f"{self._get_base_url(market_type)}"
-                await self.ws_manager.add_connection(url, connection_id, reconnect_interval=20)
+                await self.ws_manager.add_connection(url, connection_id)
             except Exception as e:
                 self.logger.error(f"Failed to establish connection: {str(e)}")
                 return False

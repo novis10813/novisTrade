@@ -15,7 +15,6 @@ class WebSocketConnection:
     uri: str
     created_at: datetime
     closed: bool = False
-    reconnect_interval: float = 23.5 * 3600  # 預設24小時重連
 
 class WebSocketManager:
     """ 基礎的 WebSocket 連線管理器，負責處理：
@@ -31,7 +30,7 @@ class WebSocketManager:
         self._connection_updates = asyncio.Queue()
         self._update_event = asyncio.Event()
         self._active_tasks: Set[asyncio.Task] = set()
-        self._reconnect_task = None
+        # self._reconnect_task = None
         
         self._setup_logger(level=level)
         
@@ -48,7 +47,7 @@ class WebSocketManager:
         if self.main_task is None or self.main_task.done():
             self.running = True
             self.main_task = asyncio.create_task(self._main_receive_loop())
-            self._reconnect_task = asyncio.create_task(self._check_reconnect())
+            # self._reconnect_task = asyncio.create_task(self._check_reconnect())
             self.logger.info("Started main receive loop")
 
     def _create_task(self, coro) -> asyncio.Task:
@@ -75,25 +74,20 @@ class WebSocketManager:
             await asyncio.sleep(1)  # 每秒檢查一次
             
     async def reconnect(self, connection_id: str):
-        """重新建立指定的連線"""
+        """重新建立指定的連線
+        
+        目前的作法是等到連線關閉後才重新連線。之後可以改成 hot swap 的方式。
+        """
         if connection_id not in self.connections:
             raise ValueError(f"Connection {connection_id} not found")
 
         conn = self.connections[connection_id]
-        uri = conn.uri
-        reconnect_interval = conn.reconnect_interval
 
         try:
-            # 先移除舊連線
-            await self.remove_connection(connection_id)
+            # 重新建立連接
+            conn.ws = await websockets.asyncio.client.connect(conn.uri)
             
-            # 重新建立連線
-            await self.add_connection(
-                uri=uri,
-                connection_id=connection_id,
-                reconnect_interval=reconnect_interval
-            )
-            
+            # 更新連接資訊
             if self.reconnect_callback:
                 await self.reconnect_callback(connection_id)
             
@@ -173,13 +167,13 @@ class WebSocketManager:
         except websockets.exceptions.ConnectionClosed:
             if not conn.closed:
                 self.logger.info(f"Connection closed for {connection_id}")
-                await self.remove_connection(connection_id)
+                await self.reconnect(connection_id)
         except Exception as e:
             self.logger.error(f"Error receiving from {connection_id}: {e}")
             if not conn.closed:
                 await self.remove_connection(connection_id)
 
-    async def add_connection(self, uri: str, connection_id: str, reconnect_interval: float = 23.5 * 3600) -> str:
+    async def add_connection(self, uri: str, connection_id: str) -> str:
         """添加新的 WebSocket 連接"""
         if connection_id in self.connections:
             await self.remove_connection(connection_id)
@@ -191,7 +185,6 @@ class WebSocketManager:
                 uri=uri,
                 created_at=datetime.now(),
                 closed=False,
-                reconnect_interval=reconnect_interval
             )
 
             await self._connection_updates.put((connection_id, "add"))
@@ -251,8 +244,8 @@ class WebSocketManager:
         self.running = False
         self._update_event.set()
         
-        if self._reconnect_task:
-            self._reconnect_task.cancel()
+        # if self._reconnect_task:
+        #     self._reconnect_task.cancel()
 
         # 取消所有活動任務
         for task in self._active_tasks:
