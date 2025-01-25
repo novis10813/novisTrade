@@ -11,6 +11,10 @@ class ExchangeWebSocket(ABC):
     - 定義交易所共用的介面和方法
     - 使用 WebSocketManager 來管理連線
     - 提供訂閱、取消訂閱等共用功能
+    
+    TODO:
+    - _handle_delay: 利用 heartbeat 來統計延遲的 callback 介面
+    - parse_subscription_message: 把通用格式轉換成交易所的指定格式
     """
     def __init__(self):
         self.logger = logging.getLogger(self.__class__.__name__)
