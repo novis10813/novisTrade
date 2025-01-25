@@ -3,7 +3,7 @@ import logging
 from abc import ABC, abstractmethod
 from typing import List, Dict, Set
 
-from .ws_manager import WebSocketManager
+from ..core.ws_manager import WebSocketManager
 
 class ExchangeWebSocket(ABC):
     """
