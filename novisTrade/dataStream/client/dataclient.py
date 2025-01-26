@@ -1,8 +1,18 @@
-import asyncio
-import websockets
 import json
+import asyncio
+import logging
+import websockets
 import redis.asyncio as redis
 from typing import List, Dict, Any
+
+
+
+# 設定 logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 class DataStreamClient:
     def __init__(
@@ -37,11 +47,11 @@ class DataStreamClient:
             response = await self.websocket.recv()
             connection_info = json.loads(response)
             self.client_id = connection_info["client_id"]
-            print(f"Connected to server with client id: {self.client_id}")
+            logger.info(f"Connected to server with client id: {self.client_id}")
             return True
         
         except Exception as e:
-            print(f"Connection error: {str(e)}")
+            logger.error(f"Connection error: {str(e)}")
             await self.close()
             return False
             
@@ -69,7 +79,7 @@ class DataStreamClient:
         if self.redis_client:
             await self.redis_client.close()
             
-        print("Client closed")
+        logger.info("Client closed")
             
     async def on_messages(self):
         """處理來自 Redis 的訊息"""
@@ -82,7 +92,7 @@ class DataStreamClient:
                 #     yield data
                     
         except Exception as e:
-            print(f"Redis error: {str(e)}")
+            logger.error(f"ZeroMQ error: {str(e)}")
             await self.close()
 
 async def main():
@@ -103,11 +113,11 @@ async def main():
             async for message in client.on_messages():
                 print(f"Received message: {message}")
             
-    except KeyboardInterrupt:
-        print("Shutting down...")
+    except (KeyboardInterrupt, asyncio.CancelledError):
+        logger.info("Shutting down...")
         await client.close()
     except Exception as e:
-        print(f"Error occurred: {str(e)}")
+        logger.error(f"Error occurred: {str(e)}")
         await client.close()
 
 if __name__ == "__main__":

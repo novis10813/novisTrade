@@ -320,7 +320,7 @@ class DataStreamServer:
                 exchange_ws = ExchangeWebSocketFactory.create(exchange_name)
                 await exchange_ws.start()
                 self.exchange_connections[exchange_name] = exchange_ws
-            except ValueError as e:
+            except Exception as e:
                 self.logger.error(f"Failed to create exchange connection: {e}")
                 raise
         return self.exchange_connections[exchange_name]

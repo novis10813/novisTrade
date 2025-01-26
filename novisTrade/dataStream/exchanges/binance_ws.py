@@ -30,6 +30,7 @@ class BinanceWebSocket(ExchangeWebSocket):
         """處理接收到的 WebSocket 訊息"""
         try:
             data = json.loads(message)
+            market_type = connection_id.split(":")[0]
             
             # 處理心跳訊息
             if "ping" in data:
@@ -44,7 +45,6 @@ class BinanceWebSocket(ExchangeWebSocket):
                 return
                 
             # 處理市場數據
-            market_type = connection_id.split(":")[0]  
             topic, mapped_data = self._map_format(market_type, data)
             
             # 發送到 Redis
@@ -180,7 +180,7 @@ class BinanceWebSocket(ExchangeWebSocket):
         return {
             "topic": topic,
             "exchTimestamp": data["T"],
-            "localTimestamp": data["E"],
+            "localTimestamp": int(time.time() * 1000),
             "price": data["p"],
             "quantity": data["q"],
             "side": "sell" if data["m"] else "buy",
@@ -193,7 +193,7 @@ class BinanceWebSocket(ExchangeWebSocket):
         return {
             "topic": topic,
             "exchTimestamp": data["T"],
-            "localTimestamp": data["E"],
+            "localTimestamp": int(time.time() * 1000),
             "price": data["p"],
             "quantity": data["q"],
             "side": "sell" if data["m"] else "buy",
