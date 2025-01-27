@@ -27,6 +27,7 @@ class WebSocketManager:
         self._connection_locks: Dict[str, asyncio.Lock] = {}
         self.running = True
         self.message_callback = None
+        self.message_queue = asyncio.Queue()
         self.main_task = None
         self._connection_updates = asyncio.Queue()
         self._update_event = asyncio.Event()
@@ -63,57 +64,32 @@ class WebSocketManager:
     async def _main_receive_loop(self):
         """事件驅動的主循環"""
         while self.running:
-            tasks = set()
-
-            # 處理連接更新，這邊他是獨立的任務
-            if not self._connection_updates.empty():
-                update_task = self._create_task(self._process_updates())
-
-            # 添加活動連接的接收任務
-            active_connections = {
-                conn_id: conn for conn_id, conn in self.connections.items()
-                if not conn.closed
-            }
-
-            # 為每個活動連接創建接收任務
-            for conn_id in active_connections:
-                tasks.add(self._create_task(self._receive_message(conn_id)))
-
-            if not tasks and not update_task:
-                # 如果沒有任務，等待新的事件
-                self.logger.debug("Waiting for events...")
-                await self._update_event.wait()
-                self._update_event.clear()
-                continue
+            update_processor = self._create_task(self._update_processor())
+            message_processor = self._create_task(self._message_processor())
             
-            if update_task:
-                try:
-                    await update_task
-                except Exception as e:
-                    self.logger.error(f"Error processing updates: {e}")
-                    
-            # 等待任何一個任務完成
-            if tasks:
-                try:
-                    done, pending = await asyncio.wait(
-                        tasks,
-                        return_when=asyncio.FIRST_COMPLETED,
-                    )
-
-                    # 處理完成的任務的結果（包括異常）
-                    for task in done:
-                        try:
-                            await task
-                        except Exception as e:
-                            self.logger.error(f"Task error: {e}")
-
-                    # 取消剩餘的任務
-                    for task in pending:
-                        task.cancel()
-
-                except Exception as e:
-                    self.logger.error(f"Error in main loop: {e}")
-                    await asyncio.sleep(1)
+            try:
+                await asyncio.gather(update_processor, message_processor)
+            except Exception as e:
+                self.logger.error(f"Error in main loop: {e}")
+                await asyncio.sleep(1)
+                
+    async def _message_processor(self):
+        """處理接收到的消息"""
+        try:
+            while self.running:
+                connection_id, message = await self.message_queue.get()
+                if self.message_callback:
+                    await self.message_callback(connection_id, message)
+                self.message_queue.task_done()
+        except Exception as e:
+            self.logger.error(f"Error processing message: {e}")
+            
+    async def _update_processor(self):
+        """處理連接更新"""
+        while self.running:
+            if not self._connection_updates.empty():
+                await self._process_updates()
+            await asyncio.sleep(0.1)
 
     async def _process_updates(self):
         """處理連接更新佇列"""
@@ -149,9 +125,10 @@ class WebSocketManager:
 
         conn = self.connections[connection_id]
         try:
-            message = await conn.ws.recv()
-            if self.message_callback:
-                await self.message_callback(connection_id, message)
+            while not conn.closed:
+                message = await conn.ws.recv()
+                await self.message_queue.put((connection_id, message))
+            
         except websockets.exceptions.ConnectionClosed:
             if not conn.closed:
                 self.logger.info(f"Connection closed for {connection_id}")
@@ -193,6 +170,8 @@ class WebSocketManager:
                 created_at=datetime.now(),
                 closed=False
             )
+            
+            self._create_task(self._receive_message(connection_id))
             
             if ready and not ready.done():
                 ready.set_result(True)

@@ -64,7 +64,7 @@ class DataStreamClient:
         request = {
             "action": "subscribe",
             "params": channels,
-            "client_id": int(time.time() * 1000)
+            "client_id": self.client_id
         }
         
         await self.websocket.send(json.dumps(request))
