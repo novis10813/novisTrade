@@ -79,9 +79,11 @@ class BinanceWebSocket(ExchangeWebSocket):
         symbols: List[str],
         stream_type: str,
         market_type: str = "spot",
-        request_id: int = 1
+        request_id: Optional[int] = None
     ) -> bool:
         """訂閱指定市場的串流"""
+        if request_id is None:
+            request_id = int(time.time() * 1000)
         streams = [f"{symbol}@{stream_type}" for symbol in symbols]
         
         # 建立連接 ID
@@ -95,7 +97,7 @@ class BinanceWebSocket(ExchangeWebSocket):
             except Exception as e:
                 self.logger.error(f"Failed to establish connection: {str(e)}")
                 return False
-                
+
         # 發送訂閱訊息
         subscribe_message = {
             "method": "SUBSCRIBE",
@@ -126,10 +128,12 @@ class BinanceWebSocket(ExchangeWebSocket):
         symbols: List[str],
         stream_type: str,
         market_type: str = "spot",
-        request_id: int = 312
+        request_id: Optional[int] = None
     ):
         """取消訂閱一個或多個串流"""
         streams = [f"{symbol}@{stream_type}" for symbol in symbols]
+        if request_id is None:
+            request_id = int(time.time() * 1000)
             
         connection_id = f"{market_type}:main"
             

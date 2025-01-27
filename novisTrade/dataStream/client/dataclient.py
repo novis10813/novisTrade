@@ -1,4 +1,5 @@
 import json
+import time
 import asyncio
 import logging
 import websockets
@@ -63,7 +64,7 @@ class DataStreamClient:
         request = {
             "action": "subscribe",
             "params": channels,
-            "client_id": self.client_id
+            "client_id": int(time.time() * 1000)
         }
         
         await self.websocket.send(json.dumps(request))
