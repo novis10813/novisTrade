@@ -291,13 +291,33 @@ class WebSocketManager:
         self.running = False
         self._update_event.set()
 
-        # 取消所有活動任務
-        for task in self._active_tasks:
-            task.cancel()
+        # 清空更新隊列
+        while not self._connection_updates.empty():
+            try:
+                self._connection_updates.get_nowait()
+                self._connection_updates.task_done()
+            except asyncio.QueueEmpty:
+                break
+                
+        # 清空消息隊列
+        while not self.message_queue.empty():
+            try:
+                self.message_queue.get_nowait()
+                self.message_queue.task_done()
+            except asyncio.QueueEmpty:
+                break
 
-        # 等待所有任務完成
+        # 等待所有活動任務完成
         if self._active_tasks:
+            # 取消所有活動任務
+            for task in self._active_tasks:
+                if not task.done():
+                    task.cancel()
+            
+            # 等待所有任務完成或被取消
             await asyncio.gather(*self._active_tasks, return_exceptions=True)
+            self._active_tasks.clear()
+
 
         # 關閉所有連接
         for conn_id in list(self.connections.keys()):
