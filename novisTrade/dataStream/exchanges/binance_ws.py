@@ -1,7 +1,8 @@
 import time
 import json
 import redis
-from typing import List
+
+from typing import List, Optional
 from .base_ws import ExchangeWebSocket
 
 class BinanceWebSocket(ExchangeWebSocket):
@@ -41,7 +42,8 @@ class BinanceWebSocket(ExchangeWebSocket):
                 return
                 
             # 處理訂閱/取消訂閱確認訊息
-            if "result" in data:
+            if "result" in data and "id" in data:
+                self.logger.info(f"Received subscription confirmation: {data}")
                 return
                 
             # 處理市場數據
@@ -55,21 +57,21 @@ class BinanceWebSocket(ExchangeWebSocket):
             
     async def _handle_reconnection(self, connection_id: str):
         """處理重新連接"""
+        market_type = connection_id.split(":")[0]
+        streams = list(self.subscriptions.get(market_type, set()))
+        
+        subscribe_message = {
+            "method": "SUBSCRIBE",
+            "params": streams,
+            "id": int(time.time() * 1000)
+        }
+        
         try:
-            market_type = connection_id.split(":")[0]
-            streams = list(self.subscriptions.get(market_type, set()))
-            
-            subscribe_message = {
-                "method": "SUBSCRIBE",
-                "params": streams,
-                "id": int(time.time())
-            }
-            
             await self.ws_manager.send_message(
                 connection_id,
                 json.dumps(subscribe_message)
             )
-            self.logger.info(f"Restore {len(streams)} subscriptions for {market_type}")
+
         
         except Exception as e:
             self.logger.error(f"Failed to restore subscriptions: {str(e)}")
@@ -116,7 +118,6 @@ class BinanceWebSocket(ExchangeWebSocket):
                 self.subscriptions[market_type] = set()
             for symbol in symbols:
                 self.subscriptions[market_type].add(f"{symbol}@{stream_type}")
-            self.logger.info(f"Successfully subscribed to {market_type}: {streams}")
             return True
             
         except Exception as e:
@@ -131,12 +132,12 @@ class BinanceWebSocket(ExchangeWebSocket):
         request_id: Optional[int] = None
     ):
         """取消訂閱一個或多個串流"""
-        streams = [f"{symbol}@{stream_type}" for symbol in symbols]
         if request_id is None:
             request_id = int(time.time() * 1000)
             
+        streams = [f"{symbol}@{stream_type}" for symbol in symbols]
         connection_id = f"{market_type}:main"
-            
+
         unsubscribe_message = {
             "method": "UNSUBSCRIBE",
             "params": streams,
