@@ -24,7 +24,8 @@ dependencies = [
     "tqdm (==4.67.1)",
     "uv (==0.5.15)",
     "websockets (==14.1)",
-    "requests (>=2.32.3,<3.0.0)"
+    "requests (>=2.32.3,<3.0.0)",
+    "aiofiles (>=24.1.0,<25.0.0)"
 ]
 
 
