@@ -1,0 +1,29 @@
+services:
+  binance:
+    build:
+      context: .
+      dockerfile: services/binance/Dockerfile
+    env_file:
+      - .env
+    networks:
+      - shared_network    # 連接到共享網路以使用共享的 Redis
+      - market_data_network  # 保留內部網路供服務群組內部使用
+    restart: unless-stopped
+
+  kraken:
+    build:
+      context: .
+      dockerfile: services/kraken/Dockerfile
+    env_file:
+      - .env
+    networks:
+      - shared_network
+      - market_data_network
+    restart: unless-stopped
+
+networks:
+  shared_network:    # 定義外部網路以連接共享的 Redis
+    external: true
+    name: shared_network
+  market_data_network:   # 保留內部網路
+    driver: bridge

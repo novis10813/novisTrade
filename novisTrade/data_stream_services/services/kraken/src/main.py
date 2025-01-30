@@ -1,21 +1,28 @@
+import os
 import time
 import json
-import redis
+import asyncio
 
 from datetime import datetime
-from typing import List, Union, Any
+from typing import List, Union, Any, Optional
 
-from .base_ws import ExchangeWebSocket
+from shared.core.base_ws import ExchangeWebSocket
+from shared.utils import map_logging_level
 
 
 class KrakenWebSocket(ExchangeWebSocket):
-    def __init__(self):
-        super().__init__()
-        self.redis_producer = redis.Redis(
-            host="localhost",
-            port=6379,
-            db=0,
-            decode_responses=True
+    def __init__(
+        self,
+        redis_host: str = "localhost",
+        redis_port: int = 6379,
+        redis_db: int = 0,
+        logging_level: str = "INFO"
+    ):
+        super().__init__(
+            redis_host=redis_host,
+            redis_port=redis_port,
+            redis_db=redis_db,
+            logging_level=logging_level
         )
         
     def _get_topic_name(self, symbol: str, stream_type: str, market_type: str = "spot") -> str:
@@ -54,7 +61,7 @@ class KrakenWebSocket(ExchangeWebSocket):
             topic, mapped_data = self._map_format(market_type, data)
             
             # 發送到 Redis
-            self.redis_producer.publish(topic, json.dumps(mapped_data))
+            await self.redis_producer.publish(topic, json.dumps(mapped_data))
             
         except Exception as e:
             self.logger.error(f"Error handling message: {str(e)}")
@@ -110,12 +117,15 @@ class KrakenWebSocket(ExchangeWebSocket):
         symbols: List[str],
         stream_type: str,
         market_type: str = "spot",
-        request_id: int = 1
+        request_id: Optional[int] = None
     ) -> bool:
         """訂閱市場數據
         這邊傳進來的東西一定會是在同一個 market_type 下的
         但是會有不同的 stream type。
         """ 
+        if request_id is None:
+            request_id = int(time.time() * 1000)
+            
         streams = [f"{symbol}@{stream_type}" for symbol in symbols]
         
         connection_id = f"{market_type}:main"
@@ -152,9 +162,12 @@ class KrakenWebSocket(ExchangeWebSocket):
         symbols: List[str],
         stream_type: str,
         market_type: str = "spot",
-        request_id: int = 312
+        request_id: Optional[int] = None
     ):
         """取消訂閱市場數據"""
+        if request_id is None:
+            request_id = int(time.time() * 1000)
+            
         streams = [f"{symbol}@{stream_type}" for symbol in symbols]
         connection_id = f"{market_type}:main"
         
@@ -351,6 +364,20 @@ class KrakenWebSocket(ExchangeWebSocket):
             "tradeId": data["data"][0]["trade_id"]
         }
         
-    async def close(self):
-        await super().close()
-        self.redis_producer.close()
+async def main():
+    redis_host = os.getenv("REDIS_HOST", "localhost")
+    redis_port = int(os.getenv("REDIS_PORT", 6379))
+    redis_db = int(os.getenv("REDIS_DB", 0))
+    logging_level = os.getenv("LOGGING_LEVEL", "INFO")
+    
+    ws_client = KrakenWebSocket(
+        redis_host=redis_host,
+        redis_port=redis_port,
+        redis_db=redis_db,
+        logging_level=map_logging_level(logging_level)
+    )
+    
+    await ws_client.start()
+
+if __name__ == "__main__":
+    asyncio.run(main())
