@@ -4,7 +4,7 @@ import json
 import logging
 import asyncio
 
-from typing import List, Optional
+from typing import List, Optional, Set
 
 from shared.core.base_ws import ExchangeWebSocket
 from shared.utils import map_logging_level
@@ -22,8 +22,9 @@ class BinanceWebSocket(ExchangeWebSocket):
             redis_host=redis_host,
             redis_port=redis_port,
             redis_db=redis_db,
-            logging_level=logging_level
+            logging_level=logging_level,
         )
+        self.subscriptions: Dict[str, Set[str]] = {}
 
     def _get_topic_name(
         self, symbol: str, stream_type: str, market_type: str = "spot"
@@ -149,6 +150,20 @@ class BinanceWebSocket(ExchangeWebSocket):
         }
 
         try:
+            # # 取消訂閱只發生在 self.client_subscriptions 的最後一個 client 取消訂閱的時候
+            # not_sub_symbols = self.is_subscribed(symbols, stream_type, market_type)
+            # # 實際上要取消訂閱的 symbol
+            # sub_symbols = list(set(symbols) - set(not_sub_symbols))
+            # for symbol in sub_symbols:
+            #     key = f"{exchange}:{market_type}:{symbol}:{stream_type}"
+            #     self.subscriptions[key].remove(client_id)
+            #     # 如果沒有人訂閱了，就取消訂閱
+            #     if not self.subscriptions[key]:
+            #         await exchange_ws.unsubscribe(
+            #             [symbols], stream_type, market_type, request_id
+            #         )
+            #         del self.subscriptions[key]
+
             await self.ws_manager.send_message(
                 connection_id, json.dumps(unsubscribe_message)
             )
@@ -212,15 +227,16 @@ async def main():
     redis_port = int(os.getenv("REDIS_PORT", 6379))
     redis_db = int(os.getenv("REDIS_DB", 0))
     logging_level = os.getenv("LOGGING_LEVEL", "INFO")
-    
+
     ws_client = BinanceWebSocket(
         redis_host=redis_host,
         redis_port=redis_port,
         redis_db=redis_db,
-        logging_level=map_logging_level(logging_level)
+        logging_level=map_logging_level(logging_level),
     )
-    
+
     await ws_client.start()
+
 
 if __name__ == "__main__":
     asyncio.run(main())
