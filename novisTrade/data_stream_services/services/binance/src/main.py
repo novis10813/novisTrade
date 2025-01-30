@@ -1,6 +1,7 @@
 import os
 import time
 import json
+import logging
 import asyncio
 
 from typing import List, Optional
@@ -15,7 +16,7 @@ class BinanceWebSocket(ExchangeWebSocket):
         redis_host: str = "localhost",
         redis_port: int = 6379,
         redis_db: int = 0,
-        logging_level: str = "INFO"
+        logging_level: int = logging.INFO,
     ):
         super().__init__(
             redis_host=redis_host,

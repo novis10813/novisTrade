@@ -2,6 +2,7 @@ import os
 import time
 import json
 import asyncio
+import logging
 
 from datetime import datetime
 from typing import List, Union, Any, Optional
@@ -16,13 +17,13 @@ class KrakenWebSocket(ExchangeWebSocket):
         redis_host: str = "localhost",
         redis_port: int = 6379,
         redis_db: int = 0,
-        logging_level: str = "INFO"
+        logging_level: int = logging.INFO,
     ):
         super().__init__(
             redis_host=redis_host,
             redis_port=redis_port,
             redis_db=redis_db,
-            logging_level=logging_level
+            logging_level=logging_level,
         )
         
     def _get_topic_name(self, symbol: str, stream_type: str, market_type: str = "spot") -> str:
