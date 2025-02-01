@@ -5,7 +5,7 @@ use tokio_stream::{Stream, StreamExt};
 use anyhow::{Result, Context};
 use tracing::{info, error};
 
-use redis::{AsyncCommands};
+use redis::AsyncCommands;
 use redis::aio::MultiplexedConnection;
 
 use crate::configuration::Settings;
