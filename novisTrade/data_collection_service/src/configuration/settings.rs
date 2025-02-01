@@ -24,7 +24,7 @@ impl Settings {
             .set_default("symbols", vec!["btcusdt".to_string()])?
             .set_default("market_type", "spot")?
             .set_default("stream_type", "aggTrade")?
-            .set_default("log_directory", "./logs")?
+            .set_default("log_directory", "./Data")?
             // 從環境變數讀取
             .add_source(Environment::default())
             .build()?;
