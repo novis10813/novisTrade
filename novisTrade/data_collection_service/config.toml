@@ -1,0 +1,6 @@
+redis_url = "redis://127.0.0.1:6379"
+exchange_name = "binance"
+symbols = ["ethusdt", "bnbusdt"]
+market_type = "perp"
+stream_type = "aggTrade"
+log_directory = "./Data"
