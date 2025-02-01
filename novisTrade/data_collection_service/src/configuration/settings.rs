@@ -1,6 +1,6 @@
 // configuration/settings.rs
 use serde::Deserialize;
-use config::{Config, ConfigError, Environment};
+use config::{Config, ConfigError};
 
 // derive 類似於 python 的 decorator
 // 但他實際在做的事情是給原有的 class 加上更多行為
@@ -14,19 +14,19 @@ pub struct Settings {
     pub log_directory: String,
 }
 
+
 impl Settings {
-    // 讀取 .env 檔案並設定預設值
     pub fn new() -> Result<Self, ConfigError> {
-        let config: Config = Config::builder()
-            // 設定預設值
+        let config = Config::builder()
+            // 從檔案讀取
+            .add_source(config::File::with_name("config"))
+            // 設定預設值作為後備
             .set_default("redis_url", "redis://127.0.0.1:6379")?
             .set_default("exchange_name", "binance")?
             .set_default("symbols", vec!["btcusdt".to_string()])?
             .set_default("market_type", "spot")?
             .set_default("stream_type", "aggTrade")?
             .set_default("log_directory", "./Data")?
-            // 從環境變數讀取
-            .add_source(Environment::default())
             .build()?;
 
         config.try_deserialize()
