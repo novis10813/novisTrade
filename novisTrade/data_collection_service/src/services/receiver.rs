@@ -1,5 +1,3 @@
-use std::ops::Sub;
-
 // services/redis.rs
 use tokio::sync::mpsc;
 use tokio_stream::{Stream, StreamExt};
@@ -7,7 +5,7 @@ use tokio_stream::{Stream, StreamExt};
 use anyhow::{Result, Context};
 use tracing::{info, error};
 
-use redis::{AsyncCommands, RedisError};
+use redis::{AsyncCommands};
 use redis::aio::MultiplexedConnection;
 
 use crate::configuration::Settings;
@@ -54,7 +52,7 @@ impl RedisService {
     }
     
 
-    pub async fn publish_request(&self, request: &SubscriptionRequest) -> Result<(u64)> {
+    pub async fn publish_request(&self, request: &SubscriptionRequest) -> Result<u64> {
         let mut conn: MultiplexedConnection = self.client.get_multiplexed_async_connection().await
             .context("Failed to get Redis connection")?;
         let channel: String = format!("{}:control", self.settings.exchange_name);
