@@ -74,7 +74,7 @@ utils/file_rotation.rs:
 - [ ] 自動存入 PostgreSQL 資料庫
 
 ## Dependencies
-
+```
 tokio = { version = "1.43.0", features = ["full"] }
 redis = { version = "0.28.2", features = ["tokio-comp"] }
 serde = { version = "1.0.217", features = ["derive"] }
@@ -91,3 +91,4 @@ tokio-stream = "0.1.17"
 futures = "0.3.19"
 metrics = "0.20"
 metrics-exporter-prometheus = "0.16.1"
+```
