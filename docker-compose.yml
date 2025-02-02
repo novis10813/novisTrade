@@ -1,0 +1,16 @@
+services:
+  redis:
+    image: redis
+    container_name: redis_container
+    ports:
+      - "6379:6379"
+    volumes:
+      - /mnt/raid1/redis:/data
+    command: redis-server --appendonly yes
+    networks:
+      - shared_network
+    restart: unless-stopped
+
+networks:
+  shared_network:
+    name: shared_network
