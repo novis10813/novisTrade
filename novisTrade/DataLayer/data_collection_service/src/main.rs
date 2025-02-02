@@ -1,6 +1,7 @@
 // main.rs
 use anyhow::Result;
-use tracing::{info, error};
+use tracing::{info, error, debug};
+use tracing_subscriber;
 use tokio_stream::StreamExt;
 
 mod utils;
@@ -15,6 +16,8 @@ use services::{receiver::RedisService, storage::StorageService};
 #[tokio::main]
 async fn main() -> Result<()> {
     // 初始化日誌
+    tracing_subscriber::fmt::init();
+
     // 載入設定
     let settings: Settings = Settings::new()?;
     info!("Configuration loaded: {:?}", settings);
@@ -27,6 +30,7 @@ async fn main() -> Result<()> {
     let redis_service = RedisService::new(settings.clone()).await?;
 
     // 啟動 Redis 訂閱
+    debug!("Subscribing to topics");
     let mut stream = redis_service.subscribe().await?;
 
     // 開始監聽

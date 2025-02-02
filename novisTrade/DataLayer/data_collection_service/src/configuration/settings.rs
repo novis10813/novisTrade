@@ -44,9 +44,6 @@ impl Settings {
             .set_default("log_directory", "./Data")?
             .build()?;
 
-        let settings = config.try_deserialize()?;
-        println!("Settings: {:?}", settings);
-
-        Ok(settings)
+        config.try_deserialize()
     }
 }

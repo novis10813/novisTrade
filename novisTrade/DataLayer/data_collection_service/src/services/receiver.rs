@@ -3,7 +3,7 @@ use tokio::sync::mpsc;
 use tokio_stream::{Stream, StreamExt};
 
 use anyhow::{Result, Context};
-use tracing::{info, error};
+use tracing::{info, error, debug};
 
 use redis::AsyncCommands;
 use redis::aio::MultiplexedConnection;
@@ -21,6 +21,8 @@ impl RedisService {
     pub async fn new(settings: Settings) -> Result<Self> {
         let client: redis::Client = redis::Client::open(settings.redis_url.clone())
             .context("Failed to create Redis client")?;
+
+        info!("Connected to Redis: {}", &settings.redis_url);
         Ok(Self { client, settings })
     }
 
@@ -66,9 +68,11 @@ impl RedisService {
 
     pub async fn subscribe(&self) -> Result<impl Stream<Item = MarketData>> {
         let client: redis::Client = self.client.clone();
+        debug!("getting pubsub connection");
         let mut pubsub_conn = client.get_async_pubsub().await
             .context("Failed to get Redis pubsub connection")?;
-
+        
+        debug!("generating subscription requests");
         let request: SubscriptionRequest = SubscriptionRequest::new(
             "subscribe".to_string(),
             self.settings.symbols.clone(),
@@ -77,7 +81,9 @@ impl RedisService {
         );
 
         // 發送訂閱訊息
+        debug!("Subscribed to channels: {:?}", &self.settings.symbols);
         let _response = self.publish_request(&request).await?;
+        debug!("Subscribed to channels: {:?}", &self.settings.symbols);
 
         for channel in request.get_channels(&self.settings.exchange_name) {
             pubsub_conn.subscribe(&channel).await

@@ -1,5 +1,5 @@
 exchange_name = "binance"
-symbols = ["ethusdt", "bnbusdt"]
+symbols = ["btcusdt"]
 market_type = "perp"
 stream_type = "aggTrade"
-log_directory = "./Data"
+log_directory = "/app/Data"

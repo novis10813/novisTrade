@@ -1,0 +1,22 @@
+services:
+  collection_service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    user: "1000:1001"
+    volumes:
+      - /mnt/raid1/exchange_data/Data:/app/Data
+      - .:/app  # 將整個專案目錄掛載到容器的 /app
+    networks:
+      - shared_network
+      - market_data_network
+    restart: unless-stopped
+
+networks:
+  shared_network:    # 定義外部網路以連接共享的 Redis
+    external: true
+    name: shared_network
+  market_data_network:   # 保留內部網路
+    driver: bridge
