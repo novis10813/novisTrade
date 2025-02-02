@@ -1,6 +1,6 @@
 // main.rs
 use anyhow::Result;
-use tracing::{info, error, debug};
+use tracing::{debug, error, info};
 use tracing_subscriber;
 use tokio_stream::StreamExt;
 

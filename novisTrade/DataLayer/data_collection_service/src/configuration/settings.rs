@@ -1,6 +1,7 @@
 // configuration/settings.rs
 use serde::Deserialize;
 use config::{Config, ConfigError, Environment};
+use tracing::{info, error};
 use dotenv::dotenv;
 
 // derive 類似於 python 的 decorator
@@ -23,10 +24,10 @@ impl Settings {
 
         match std::env::var("REDIS_URL") {
             Ok(url) => {
-                println!("Using REDIS_URL from environment: {}", url);
+                info!("Using REDIS_URL from environment: {}", url);
             }
             Err(_) => {
-                println!("REDIS_URL not found in environment, using default");
+                error!("REDIS_URL not found in environment, using default");
             }
         }
 
@@ -43,7 +44,7 @@ impl Settings {
             .set_default("stream_type", "aggTrade")?
             .set_default("log_directory", "./Data")?
             .build()?;
-
+        
         config.try_deserialize()
     }
 }

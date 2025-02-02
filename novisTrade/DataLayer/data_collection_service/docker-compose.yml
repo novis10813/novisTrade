@@ -5,10 +5,9 @@ services:
       dockerfile: Dockerfile
     env_file:
       - .env
-    user: "1000:1001"
     volumes:
       - /mnt/raid1/exchange_data/Data:/app/Data
-      - .:/app  # 將整個專案目錄掛載到容器的 /app
+      # - .:/app  # 將整個專案目錄掛載到容器的 /app
     networks:
       - shared_network
       - market_data_network
