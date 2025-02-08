@@ -1,6 +1,7 @@
+import uuid
 import warnings
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, model_validator, RootModel
 from typing import Dict, Any, Optional, List, Literal
 from datetime import datetime
 
@@ -26,8 +27,8 @@ class PreprocessStep(BaseModel):
     params: Dict[str, Any]
 
 
-class PreprocessConfig(BaseModel):
-    steps: Dict[str, List[PreprocessStep]]
+class PreprocessConfig(RootModel[Dict[str, List[PreprocessStep]]]):
+    pass
 
 
 class SignalModel(BaseModel):
@@ -52,7 +53,6 @@ class SignalConfig(BaseModel):
 class StrategyMetadata(BaseModel):
     name: str
     description: Optional[str] = None
-    strategy_id: str
     status: Literal["active", "paused", "stopped"] = "stopped"
     data: DataConfig
     preprocess: Dict[str, PreprocessConfig]
@@ -62,17 +62,20 @@ class StrategyMetadata(BaseModel):
 
     model_config = {"json_encoders": {datetime: lambda v: v.isoformat()}}
 
-    @model_validator(mode="after")
-    def validate_preprocess_keys(cls, values):
-        data_keys = {dt.key() for dt in values["data"]["types"]}
-        preprocess_keys = set(values["preprocess"].keys())
+    # @model_validator(mode="after")
+    # def validate_preprocess_keys(cls, values):
+    #     data_keys = {dt.key() for dt in values["data"]["types"]}
+    #     preprocess_keys = set(values["preprocess"].keys())
 
-        unused_keys = preprocess_keys - data_keys
-        if unused_keys:
-            warnings.warn(
-                f"The following data sources are subscribed but not used in preprocess: {unused_keys}"
-            )
+    #     unused_keys = preprocess_keys - data_keys
+    #     if unused_keys:
+    #         warnings.warn(
+    #             f"The following data sources are subscribed but not used in preprocess: {unused_keys}"
+    #         )
 
+
+class StrategyMetadataWithId(StrategyMetadata):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
 
 # 用於請求的模型
 class StrategyCreate(BaseModel):
