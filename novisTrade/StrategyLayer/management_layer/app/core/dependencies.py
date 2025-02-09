@@ -1,8 +1,8 @@
 # app/core/dependencies.py
 """Singleton pattern"""
 
-from .manager import StrategyManager
-from .strategy_store import StrategyStore
+from core.manager import StrategyManager
+from core.strategy_store import StrategyStore
 
 
 _redis_connector = None

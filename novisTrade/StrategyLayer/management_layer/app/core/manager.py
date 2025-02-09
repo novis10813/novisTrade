@@ -3,61 +3,85 @@ import logging
 
 from typing import List, Optional, Dict, Any
 
-from ..schemas.strategies_pattern import StrategyMetadata, StrategyMetadataWithId
-from .events import EventEmitter
+from schemas.strategy import StrategyMetadataCreate
+from core.events import EventEmitter
 
 logger = logging.getLogger(__name__)
 
 class StrategyManager:
     def __init__(self):
         self.events = EventEmitter()
-        
-        # 註冊需要回應的事件
-        # self.events.on("")
-        # self.events.on("storage:get_all_strategies", self._handle_get_all_strategies)
-        # self.events.on("storage:get_strategy", self._handle_get_strategy)
 
-    async def create_strategy(self, strategy: StrategyMetadataWithId) -> Dict[str, str]:
+    async def create_strategy(self, strategy: StrategyMetadataCreate) -> str:
         """添加新策略
         Args:
-            strategy_data (Dict[str, Any]): 策略資料
+            strategy_data (StrategyMetadataCreate): 策略資料
         
         Returns:
-            {
-                "message": "Strategy added successfully",
-                "strategy_id": "strategy_id"
-            }
+            strategy_id (str): 策略 ID
         """
         try:
             # 發送策略創建的事件
             # 接收方: storage.py
-            storage_response = await self.events.emit("strategy:create", strategy)
-            logger.info(f"Storage response: {storage_response}")
-            if storage_response.get("success") == False:
-                logger.debug(f"Failed to create strategy: {storage_response.get('message')}")
-                raise Exception(storage_response.get("message"))
+            storage_response = await self.events.emit("storage:createStrategy", strategy)
+            logger.debug(f"Storage response: {storage_response}")
+            if not storage_response.get("success"):
+                logger.error(f"Failed to create strategy: {storage_response.get('message')}")
+                raise ValueError(storage_response.get("message"))
             
-            # 發送訂閱交易對的事件
-            # 接收方: redis.py
-            # TODO: 這邊我可能會需要寫一個對 MQ 的 interface，這樣就不用直接寫 redis 的東西
-            data_keys = [dt.key() for dt in strategy.data.types]
-            # subscribe_response = await self.events.emit("strategy:subscribed", data_keys)
-            subscribe_response = {
-                "success": True,
-                "message": "Subscribed successfully"
-            }
-            if subscribe_response.get("success") == False:
-                raise Exception(subscribe_response.get("message"))
-            
-            return {
-                "message": "Strategy added successfully",
-                "strategy_id": strategy.id
-            }
+            return storage_response.get("strategy_id")
+        
         except Exception as e:
-            return {
-                "message": f"failed: {str(e)}",
-                "strategy_id": ""
-            }
+            logger.error(f"Error in create_strategy: {str(e)}")
+            raise ValueError(f"Failed to create strategy: {str(e)}")
+        
+    async def delete_strategy(self, strategy_id: str) -> bool:
+        try:
+            storage_response = await self.events.emit("storage:deleteStrategy", {"strategy_id": strategy_id})
+            logger.debug(f"Storage response: {storage_response}")
+            if not storage_response.get("success"):
+                logger.error(f"Failed to delete strategy: {storage_response.get('message')}")
+                raise ValueError(storage_response.get("message"))
+            
+            return True
+        except Exception as e:
+            logger.error(f"Error in delete_strategy: {str(e)}")
+            raise ValueError(f"Failed to delete strategy: {str(e)}")
+        
+    async def load_strategy(self, strategy_id: str):
+        """載入策略到 Redis 中
+        步驟 1. 先從 storage 中取得策略資料
+        步驟 2. 將策略資料存到 Redis 中
+        """
+        storage_response = await self.events.emit("storage:loadStrategy", {"strategy_id": strategy_id})
+        if not storage_response.get("success"):
+            logger.error(f"Failed to load strategy: {storage_response.get('message')}")
+            raise ValueError(storage_response.get("message"))
+        
+        strategy_to_load = storage_response.get("strategy")
+        redis_response = await self.events.emit("redis:loadStrategy", {"strategy": strategy_to_load})
+        if not redis_response.get("success"):
+            logger.error(f"Failed to load strategy to Redis: {redis_response.get('message')}")
+            raise ValueError(redis_response.get("message"))
+        
+            
+    async def start_strategy(self, strategy_id: str) -> Optional[Dict[str, Any]]:
+        """啟動策略"""
+        # 發送訂閱交易對的事件
+        # 接收方: redis_queue.py
+        # TODO: 這邊我可能會需要寫一個對 MQ 的 interface，這樣就不用直接寫 redis 的東西
+        # 但現在先直接用 redis 來寫即可
+        
+        # 這邊應該放到 "self.start_strategy"
+        # data_keys = [dt.key() for dt in strategy.data.types]
+        # subscribe_response = await self.events.emit("strategy:subscribed", data_keys)
+        # subscribe_response = {
+        #     "success": True,
+        #     "message": "Subscribed successfully"
+        # }
+        # if subscribe_response.get("success") == False:
+        #     raise Exception(subscribe_response.get("message"))
+        pass
 
     # async def get_all_strategies(self) -> List[StrategyMetadataWithId]:
     #     """列出所有策略"""

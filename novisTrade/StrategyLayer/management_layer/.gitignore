@@ -1,6 +1,5 @@
 
-# pixi environments
-.pixi
+*.env*
 *.egg-info
 *.log
 strategies/

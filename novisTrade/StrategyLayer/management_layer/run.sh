@@ -7,5 +7,4 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 export PYTHONPATH="${SCRIPT_DIR}:${PYTHONPATH}"
 
 # 從專案根目錄執行 main.py
-python -m uvicorn app.main:app --host 0.0.0.0 --port 5000 --reload --reload-dir app
-# python "${SCRIPT_DIR}/app/main.py"
+python app/run.py --dev
