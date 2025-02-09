@@ -49,7 +49,7 @@ class SignalConfig(BaseModel):
     models: List[SignalModel]
     logic: SignalLogic
 
-
+# 用於創建模型
 class StrategyMetadata(BaseModel):
     name: str
     description: Optional[str] = None
@@ -57,10 +57,16 @@ class StrategyMetadata(BaseModel):
     data: DataConfig
     preprocess: Dict[str, PreprocessConfig]
     signals: SignalConfig
-    created_at: datetime = Field(default_factory=datetime.now)
-    updated_at: datetime = Field(default_factory=datetime.now)
 
     model_config = {"json_encoders": {datetime: lambda v: v.isoformat()}}
+    
+class StrategyMetadataCreate(BaseModel):
+    name: str
+    description: Optional[str] = None
+    status: Literal["active", "paused", "stopped"] = "stopped"
+    data: DataConfig
+    preprocess: Dict[str, PreprocessConfig]
+    signals: SignalConfig
 
     # @model_validator(mode="after")
     # def validate_preprocess_keys(cls, values):
@@ -73,19 +79,29 @@ class StrategyMetadata(BaseModel):
     #             f"The following data sources are subscribed but not used in preprocess: {unused_keys}"
     #         )
 
+# 完整更新模型
+class StrategyMetadataUpdate(StrategyMetadata):
+    pass
 
-class StrategyMetadataWithId(StrategyMetadata):
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-
-# 用於請求的模型
-class StrategyCreate(BaseModel):
-    name: str
-    description: Optional[str] = None
-    parameters: Dict[str, Any]
-
-
-class StrategyUpdate(BaseModel):
+# 部分更新模型
+class StrategyMetadataPatch(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
-    parameters: Optional[Dict[str, Any]] = None
-
+    status: Optional[Literal["active", "paused", "stopped"]] = None
+    data: Optional[DataConfig] = None
+    preprocess: Optional[Dict[str, PreprocessConfig]] = None
+    signals: Optional[SignalConfig] = None
+    
+# 用於回應的模型
+class StrategyMetadataResponse(BaseModel):
+    name: str
+    description: str
+    
+class StrategyMetadataCreateResponse(BaseModel):
+    message: str
+    id: str
+    
+class StrategyMetadataInDB(StrategyMetadata):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    created_at: datetime = Field(default_factory=datetime.now)
+    updated_at: datetime = Field(default_factory=datetime.now)
