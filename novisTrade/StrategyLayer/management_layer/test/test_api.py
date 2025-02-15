@@ -79,12 +79,9 @@ def test_strategy_operations():
     print("\n1. Adding new strategy...")
     response = requests.post(f"{BASE_URL}/api/v1/strategies", json=strategy_data)
     print(f"Status Code: {response.status_code}")
-    print(f"Response: {response.json()}")
-    # if response.status_code == 200:
-    #     strategy = response.json()
-    #     strategy_id = response.json()["strategy_id"]
-    #     print(json.dumps(strategy, indent=2))
-
+    if response.status_code == 201:
+        strategy_id = response.json()["id"]
+        print(f"response: {response.json()}")
     # # 2. 列出所有策略
     # print("\n2. Listing all strategies...")
     # response = requests.get(f"{BASE_URL}/strategies")
