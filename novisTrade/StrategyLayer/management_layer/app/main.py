@@ -1,15 +1,30 @@
 # app/main.py
-import uvicorn
 import logging
-import argparse
 
-from dotenv import load_dotenv
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
 
 from api.v1.strategy import strategies
-from core.dependencies import get_strategy_store
 from settings.config import get_settings
+
+settings = get_settings()
+
+log_level_map = {
+    'DEBUG': logging.DEBUG,       # 10
+    'INFO': logging.INFO,        # 20
+    'WARNING': logging.WARNING,  # 30
+    'ERROR': logging.ERROR,      # 40
+    'CRITICAL': logging.CRITICAL # 50
+}
+
+logging.basicConfig(
+    level=log_level_map[settings.log_level],
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler('strategy_server.log')
+    ]
+)
 
 logger = logging.getLogger(__name__)
 
@@ -19,12 +34,9 @@ async def lifespan(app: FastAPI):
     啟動事件
     """
     # 需要初始化的服務都在這邊調用
-    get_strategy_store()
     yield
 
-settings = get_settings()
 
-logger.debug(f"Settings: {settings}")
 app = FastAPI(
     title=settings.app_name,
     description="API for managing trading strategies",

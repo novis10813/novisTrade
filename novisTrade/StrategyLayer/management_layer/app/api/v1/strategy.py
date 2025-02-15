@@ -2,19 +2,16 @@
 import logging
 
 from typing import List, Dict, Any
-from fastapi import APIRouter, HTTPException, status, Depends
+from fastapi import APIRouter, HTTPException, status
 
-from core.manager import StrategyManager
-from schemas.strategy import (
+from app.schemas.strategy import (
     StrategyMetadataCreate,
     StrategyMetadataCreateResponse,
     StrategyMetadataResponse
 )
-from core.dependencies import get_strategy_manager
+from app.core import manager
 
-# app = FastAPI()
 router = APIRouter(prefix="/strategies", tags=["strategies"])
-manager = StrategyManager()
 
 logger = logging.getLogger(__name__)
 
@@ -27,9 +24,7 @@ logger = logging.getLogger(__name__)
 )
 async def create_strategy(
     strategy: StrategyMetadataCreate,
-    manager: StrategyManager = Depends(get_strategy_manager),
 ):
-    logger.debug(f"Received request at /strategies")
     try:
         # 呼叫 manager 來處理策略新增
         strategy_id = await manager.create_strategy(strategy)
@@ -42,8 +37,7 @@ async def create_strategy(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"{str(e)}"
         )
-
-
+        
 # @router.get("/", response_model=List[StrategyMetadataWithId])
 # def get_all_strategies(
 #     manager: StrategyManager = Depends(get_strategy_manager),

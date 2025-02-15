@@ -1,35 +1,36 @@
 # app/core/manager.py
 import logging
 
-from typing import List, Optional, Dict, Any
+from typing import Optional, Dict, Any
 
 from schemas.strategy import StrategyMetadataCreate
-from core.events import EventEmitter
+from app.core.services import strategy_service as services
 
 logger = logging.getLogger(__name__)
 
-class StrategyManager:
-    def __init__(self):
-        self.events = EventEmitter()
 
-    async def create_strategy(self, strategy: StrategyMetadataCreate) -> str:
-        """添加新策略
-        Args:
-            strategy_data (StrategyMetadataCreate): 策略資料
+async def create_strategy(strategy: StrategyMetadataCreate) -> str:
+    """添加新策略
+    Args:
+        strategy_data (StrategyMetadataCreate): 策略資料
         
-        Returns:
-            strategy_id (str): 策略 ID
-        """
-        try:
-            # 發送策略創建的事件
-            # 接收方: storage.py
-            storage_response = await self.events.emit("storage:createStrategy", strategy)
-            logger.debug(f"Storage response: {storage_response}")
-            if not storage_response.get("success"):
-                logger.error(f"Failed to create strategy: {storage_response.get('message')}")
-                raise ValueError(storage_response.get("message"))
-            
-            return storage_response.get("strategy_id")
+    Returns:
+        strategy_id (str): 策略 ID
+    """
+    try:
+        # 建立策略並存到 storage 中
+        strategy_id = await services.create_strategy(strategy)
+    except Exception as e: # TODO: 針對自定義的 exception 進行處理
+        raise ValueError(f"Failed to create strategy: {str(e)}")
+    
+    try:
+        # 把建立好的策略載入到 Redis 中
+        await services.load_strategy(strategy_id)
+    except Exception as e: # TODO: 針對自定義的 exception 進行處理
+        raise ValueError(f"Failed to load strategy: {str(e)}")
+    
+    return strategy_id
+
         
         except Exception as e:
             logger.error(f"Error in create_strategy: {str(e)}")

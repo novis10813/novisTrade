@@ -1,22 +1,18 @@
 # app/core/dependencies.py
 """Singleton pattern"""
 
-from core.manager import StrategyManager
-from core.strategy_store import StrategyStore
+from app.core.cache.redis_client import RedisClient
+from app.settings.config import get_settings
 
+_settings = get_settings()
+_redis_client = None
 
-_redis_connector = None
-_strategy_manager = None
-_strategy_store = None
-
-def get_strategy_manager() -> StrategyManager:
-    global _strategy_manager
-    if _strategy_manager is None:
-        _strategy_manager = StrategyManager()
-    return _strategy_manager
-
-def get_strategy_store() -> StrategyStore:
-    global _strategy_store
-    if _strategy_store is None:
-        _strategy_store = StrategyStore()
-    return _strategy_store
+def get_redis_client() -> RedisClient:
+    global _redis_client
+    if _redis_client is None:
+        _redis_client = RedisClient(
+            redis_host=_settings.redis_host,
+            redis_port=_settings.redis_port,
+            redis_db=_settings.redis_db
+        )
+    return _redis_client

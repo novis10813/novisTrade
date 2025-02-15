@@ -1,17 +1,8 @@
 import os
 import uvicorn
-import logging
 import argparse
 
 from dotenv import load_dotenv
-
-log_level_map = {
-    'DEBUG': logging.DEBUG,       # 10
-    'INFO': logging.INFO,        # 20
-    'WARNING': logging.WARNING,  # 30
-    'ERROR': logging.ERROR,      # 40
-    'CRITICAL': logging.CRITICAL # 50
-}
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run the server in different modes.")
@@ -28,26 +19,13 @@ if __name__ == "__main__":
     else:
         load_dotenv("app/settings/.env.dev")
         
-    log_level = os.getenv("LOG_LEVEL")
-        
-    logging.basicConfig(
-        level=log_level_map[log_level],
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.StreamHandler(),  # 輸出到控制台
-            logging.FileHandler('strategy_server.log')  # 輸出到文件
-        ]
-    )
-    
-    logger = logging.getLogger(__name__)
-    uvicorn_log_level = log_level.lower()
-    
-        
+    uvicorn_log_level = os.getenv("LOG_LEVEL").lower()
+
     uvicorn.run(
-            app="main:app",
-            host="0.0.0.0",
-            port=int(os.getenv("PORT")),
-            reload=bool(os.getenv("RELOAD")),  # 開發模式啟用熱重載
-            reload_dirs=["app"],  # 監聽的目錄
-            log_level=uvicorn_log_level
-        )
+        app="main:app",
+        host="0.0.0.0",
+        port=int(os.getenv("PORT")),
+        reload=bool(os.getenv("RELOAD")),  # 開發模式啟用熱重載
+        reload_dirs=["app"],  # 監聽的目錄
+        log_level=uvicorn_log_level
+    )

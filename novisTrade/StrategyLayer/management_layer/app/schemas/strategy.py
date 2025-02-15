@@ -1,9 +1,17 @@
 import uuid
 import warnings
 
-from pydantic import BaseModel, Field, model_validator, RootModel
-from typing import Dict, Any, Optional, List, Literal
+from enum import Enum
 from datetime import datetime
+from typing import Dict, Any, Optional, List, Literal
+from pydantic import (
+    BaseModel, 
+    Field, 
+    model_validator, 
+    RootModel, 
+    ConfigDict, 
+    field_serializer
+)
 
 
 class DataType(BaseModel):
@@ -49,21 +57,35 @@ class SignalConfig(BaseModel):
     models: List[SignalModel]
     logic: SignalLogic
 
+
+class StrategyStatus(str, Enum):
+    created = "created"
+    active = "active"
+    paused = "paused"
+    stopped = "stopped"
+    error = "error"
+    
 # 用於創建模型
 class StrategyMetadata(BaseModel):
     name: str
     description: Optional[str] = None
-    status: Literal["active", "paused", "stopped"] = "stopped"
+    status: StrategyStatus = StrategyStatus.created
     data: DataConfig
     preprocess: Dict[str, PreprocessConfig]
     signals: SignalConfig
 
-    model_config = {"json_encoders": {datetime: lambda v: v.isoformat()}}
+    model_config = ConfigDict(
+        json_encoders={
+            datetime: lambda v: v.isoformat(),
+            StrategyStatus: lambda v: v.value,
+        }
+    )
+    
     
 class StrategyMetadataCreate(BaseModel):
     name: str
     description: Optional[str] = None
-    status: Literal["active", "paused", "stopped"] = "stopped"
+    status: StrategyStatus = StrategyStatus.created
     data: DataConfig
     preprocess: Dict[str, PreprocessConfig]
     signals: SignalConfig
