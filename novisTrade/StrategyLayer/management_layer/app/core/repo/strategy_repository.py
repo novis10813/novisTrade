@@ -1,8 +1,9 @@
-# app/core/strategy_store.py
+# app/core/repo/strategy_repository.py
 import yaml
 import logging
 
 from pathlib import Path
+from typing import List
 
 from schemas.strategy import StrategyMetadataInDB
 # 如果之後使用 DB，可以在 dependencies.py 中定義一個 DB 的 connector，然後在這邊使用
@@ -38,3 +39,27 @@ def load_strategy(strategy_id: str, storage_path: Path) -> StrategyMetadataInDB:
     with strategy_path.open("r", encoding="utf-8") as f:
         strategy_data = yaml.safe_load(f)
         return StrategyMetadataInDB(**strategy_data)
+
+def delete_strategy(strategy_id: str, storage_path: Path) -> None:
+    """刪除策略
+    Args:
+        strategy_id (str): 策略ID
+        storage_path (Path): 策略存儲路徑   
+    """
+    strategy_path = storage_path / f"{strategy_id}.yaml"
+    if strategy_path.exists():
+        strategy_path.unlink()
+    else:
+        raise ValueError(f"Strategy {strategy_id} not found in {storage_path}")
+
+def get_strategies(storage_path: Path) -> List[StrategyMetadataInDB]:
+    """從文件加載所有策略
+    Args:
+        storage_path (Path): 策略存儲路徑
+    Returns:
+        List[StrategyMetadataInDB]: 策略數據列表
+    """
+    strategies = []
+    for strategy_path in storage_path.glob("*.yaml"):
+        strategies.append(load_strategy(strategy_path.stem, storage_path))
+    return strategies

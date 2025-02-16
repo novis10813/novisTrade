@@ -1,9 +1,14 @@
 # app/core/manager.py
 import logging
 
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
-from schemas.strategy import StrategyMetadataCreate
+from schemas.strategy import (
+    StrategyMetadataCreate,
+    StrategyMetadataRuntimeResponse,
+    StrategyMetadataDBResponse,
+    StrategyStatus
+)
 from app.core.services import strategy_service as services
 
 logger = logging.getLogger(__name__)
@@ -27,62 +32,103 @@ async def create_strategy(strategy: StrategyMetadataCreate) -> str:
         # 把建立好的策略載入到 Redis 中
         await services.load_strategy(strategy_id)
     except Exception as e: # TODO: 針對自定義的 exception 進行處理
+        # 如果載入策略失敗，則刪除剛剛建立的策略
+        try:
+            await services.delete_strategy(strategy_id)
+        except Exception as e:
+            raise ValueError(f"Failed to delete strategy: {str(e)}")
         raise ValueError(f"Failed to load strategy: {str(e)}")
     
     return strategy_id
 
+async def load_strategy(strategy_id: str) -> None:
+    """載入策略到 Redis 中
+    Args:
+        strategy_id (str): 策略 ID
+    """
+    try:
+        await services.load_strategy(strategy_id)
+    except Exception as e: # TODO: 針對自定義的 exception 進行處理
+        raise ValueError(f"Failed to load strategy: {str(e)}")
+    
+async def unload_strategy(strategy_id: str) -> None:
+    """
+    從 Redis 中卸載策略
+    Args:
+        strategy_id (str): 策略 ID
+    """
+    try:
+        await services.unload_strategy(strategy_id)
+    except Exception as e: # TODO: 針對自定義的 exception 進行處理
+        raise ValueError(f"Failed to unload strategy: {str(e)}")
         
-        except Exception as e:
-            logger.error(f"Error in create_strategy: {str(e)}")
-            raise ValueError(f"Failed to create strategy: {str(e)}")
+async def delete_strategy(strategy_id: str) -> bool:
+    """刪除策略"""
+    try:
+        await services.delete_strategy(strategy_id)
+    except Exception as e: # TODO: 針對自定義的 exception 進行處理
+        raise ValueError(f"Failed to delete strategy: {str(e)}")
+    
+async def get_runtime_strategies(status: Optional[StrategyStatus] = None) -> List[StrategyMetadataRuntimeResponse]:
+    """列出策略
+    Args:
+        status (StrategyStatus): 策略狀態
         
-    async def delete_strategy(self, strategy_id: str) -> bool:
-        try:
-            storage_response = await self.events.emit("storage:deleteStrategy", {"strategy_id": strategy_id})
-            logger.debug(f"Storage response: {storage_response}")
-            if not storage_response.get("success"):
-                logger.error(f"Failed to delete strategy: {storage_response.get('message')}")
-                raise ValueError(storage_response.get("message"))
-            
-            return True
-        except Exception as e:
-            logger.error(f"Error in delete_strategy: {str(e)}")
-            raise ValueError(f"Failed to delete strategy: {str(e)}")
+    Returns:
+        List[StrategyMetadataRuntimeResponse]: 策略列表
         
-    async def load_strategy(self, strategy_id: str):
-        """載入策略到 Redis 中
-        步驟 1. 先從 storage 中取得策略資料
-        步驟 2. 將策略資料存到 Redis 中
-        """
-        storage_response = await self.events.emit("storage:loadStrategy", {"strategy_id": strategy_id})
-        if not storage_response.get("success"):
-            logger.error(f"Failed to load strategy: {storage_response.get('message')}")
-            raise ValueError(storage_response.get("message"))
-        
-        strategy_to_load = storage_response.get("strategy")
-        redis_response = await self.events.emit("redis:loadStrategy", {"strategy": strategy_to_load})
-        if not redis_response.get("success"):
-            logger.error(f"Failed to load strategy to Redis: {redis_response.get('message')}")
-            raise ValueError(redis_response.get("message"))
-        
-            
-    async def start_strategy(self, strategy_id: str) -> Optional[Dict[str, Any]]:
-        """啟動策略"""
-        # 發送訂閱交易對的事件
-        # 接收方: redis_queue.py
-        # TODO: 這邊我可能會需要寫一個對 MQ 的 interface，這樣就不用直接寫 redis 的東西
-        # 但現在先直接用 redis 來寫即可
-        
-        # 這邊應該放到 "self.start_strategy"
-        # data_keys = [dt.key() for dt in strategy.data.types]
-        # subscribe_response = await self.events.emit("strategy:subscribed", data_keys)
-        # subscribe_response = {
-        #     "success": True,
-        #     "message": "Subscribed successfully"
-        # }
-        # if subscribe_response.get("success") == False:
-        #     raise Exception(subscribe_response.get("message"))
-        pass
+    說明:
+        - 如果 status 為 None ，則只會列出所有策略
+        - 如果 status 不為 None ，則只會列出符合狀態的策略
+    """
+    try:
+        return await services.get_runtime_strategies(status)
+    except Exception as e: # TODO: 針對自定羙的 exception 進行處理
+        raise ValueError(f"Failed to list strategies: {str(e)}")
+    
+async def get_runtime_strategy(strategy_id: str) -> StrategyMetadataRuntimeResponse:
+    """列出策略
+    Args:
+        strategy_id (str): 策略 ID
+    """
+    try:
+        return await services.get_runtime_strategy(strategy_id)
+    except Exception as e: # TODO: 針對自定羙的 exception 進行處理
+        raise ValueError(f"Failed to list strategy: {str(e)}")
+    
+async def get_db_strategies() -> List[StrategyMetadataDBResponse]:
+    """列出策略
+    """
+    try:
+        return await services.get_db_strategies()
+    except Exception as e: # TODO: 針對自定羙的 exception 進行處理
+        raise ValueError(f"Failed to list strategies: {str(e)}")
+    
+async def get_db_strategy(strategy_id: str) -> StrategyMetadataDBResponse:
+    """列出策略
+    """
+    try:
+        return await services.get_db_strategy(strategy_id)
+    except Exception as e: # TODO: 針對自定羙的 exception 進行處理
+        raise ValueError(f"Failed to list strategy: {str(e)}")
+
+async def start_strategy(self, strategy_id: str) -> Optional[Dict[str, Any]]:
+    """啟動策略"""
+    # 發送訂閱交易對的事件
+    # 接收方: redis_queue.py
+    # TODO: 這邊我可能會需要寫一個對 MQ 的 interface，這樣就不用直接寫 redis 的東西
+    # 但現在先直接用 redis 來寫即可
+    
+    # 這邊應該放到 "self.start_strategy"
+    # data_keys = [dt.key() for dt in strategy.data.types]
+    # subscribe_response = await self.events.emit("strategy:subscribed", data_keys)
+    # subscribe_response = {
+    #     "success": True,
+    #     "message": "Subscribed successfully"
+    # }
+    # if subscribe_response.get("success") == False:
+    #     raise Exception(subscribe_response.get("message"))
+    pass
 
     # async def get_all_strategies(self) -> List[StrategyMetadataWithId]:
     #     """列出所有策略"""

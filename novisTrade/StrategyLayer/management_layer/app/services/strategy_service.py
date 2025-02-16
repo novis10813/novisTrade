@@ -29,3 +29,15 @@ async def load_strategy(strategy_id: str) -> StrategyMetadataInDB:
     """
     return storage.load_strategy(strategy_id, STORAGE_PATH)
 
+async def unload_strategy(strategy_id: str) -> bool:
+    """
+    從 Redis 中卸載策略
+    """
+    pass
+
+async def delete_strategy(strategy_id: str) -> bool:
+    """
+    刪除策略
+    """
+    pass
+

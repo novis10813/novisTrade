@@ -76,18 +76,41 @@ def test_strategy_operations():
         },
     }
 
-    print("\n1. Adding new strategy...")
-    response = requests.post(f"{BASE_URL}/api/v1/strategies", json=strategy_data)
-    print(f"Status Code: {response.status_code}")
-    if response.status_code == 201:
-        strategy_id = response.json()["id"]
-        print(f"response: {response.json()}")
-    # # 2. 列出所有策略
-    # print("\n2. Listing all strategies...")
-    # response = requests.get(f"{BASE_URL}/strategies")
+    # print("\n1. Adding new strategy...")
+    # response = requests.post(f"{BASE_URL}/api/v1/strategies", json=strategy_data)
     # print(f"Status Code: {response.status_code}")
-    # if response.status_code == 200:
+    # if response.status_code == 201:
+    #     strategy_id = response.json()["id"]
+    #     print(f"response: {response.json()}")
+    
+    # 2. 列出所有策略
+    # print("\n2. Listing all runtime strategies...")
+    # response = requests.get(f"{BASE_URL}/api/v1/strategies/runtime")
+    # print(f"Status Code: {response.status_code}")
+    # if response.status_code == 202:
     #     print(json.dumps(response.json(), indent=2))
+    
+    # print("\n3. Listing all db strategies...")
+    # response = requests.get(f"{BASE_URL}/api/v1/strategies/db")
+    # print(f"Status Code: {response.status_code}")
+    # if response.status_code == 202:
+    #     print(json.dumps(response.json(), indent=2))
+    #     print("Now we have {} strategies in db".format(len(response.json())))
+
+
+    # 3. 列出指定策略
+    # print("\n3. Listing specified strategy...")
+    # response = requests.get(f"{BASE_URL}/api/v1/strategies/runtime/f8841ecb-42ab-47c5-9b31-b25c32578abf")
+    # print(f"Status Code: {response.status_code}")
+    # if response.status_code == 202:
+    #     print(json.dumps(response.json(), indent=2))
+
+    print("\n4. Listing specific db strategies...")
+    response = requests.get(f"{BASE_URL}/api/v1/strategies/db/f8841ecb-42ab-47c5-9b31-b25c32578abf")
+    print(f"Status Code: {response.status_code}")
+    if response.status_code == 202:
+        print(json.dumps(response.json(), indent=2))
+        print("success")
 
     #     # 3. 暫停策略
     #     print(f"\n3. Pausing strategy {strategy_id}...")

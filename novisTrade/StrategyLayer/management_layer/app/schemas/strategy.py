@@ -10,7 +10,8 @@ from pydantic import (
     model_validator, 
     RootModel, 
     ConfigDict, 
-    field_serializer
+    field_serializer,
+    model_serializer
 )
 
 
@@ -33,10 +34,9 @@ class DataConfig(BaseModel):
 class PreprocessStep(BaseModel):
     operation: str
     params: Dict[str, Any]
-
-
-class PreprocessConfig(RootModel[Dict[str, List[PreprocessStep]]]):
-    pass
+    
+ProcessSteps = Dict[str, List[PreprocessStep]]
+PreprocessConfig = Dict[str, ProcessSteps]
 
 
 class SignalModel(BaseModel):
@@ -69,7 +69,7 @@ class StrategyMetadataBase(BaseModel):
     name: str
     description: Optional[str] = None
     data: DataConfig
-    preprocess: Dict[str, PreprocessConfig]
+    preprocess: PreprocessConfig
     signals: SignalConfig
     
     model_config = ConfigDict(
@@ -136,6 +136,21 @@ class StrategyMetadataPatch(BaseModel):
     signals: Optional[SignalConfig] = None
     
 # 用於回應的模型
-class StrategyMetadataResponse(BaseModel):
+class StrategyMetadataRuntimeSummary(BaseModel):
+    id: str
     name: str
     description: str
+    status: StrategyStatus
+    
+class StrategyMetadataRuntimeResponse(StrategyMetadataRuntime):
+    pass
+
+class StrategyMetadataDBSummary(BaseModel):
+    id: str
+    name: str
+    description: str
+    created_at: datetime
+    updated_at: datetime
+
+class StrategyMetadataDBResponse(StrategyMetadataInDB):
+    pass
