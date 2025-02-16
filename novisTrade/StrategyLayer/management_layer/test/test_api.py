@@ -84,18 +84,26 @@ def test_strategy_operations():
     #     print(f"response: {response.json()}")
     
     # 2. 列出所有策略
-    # print("\n2. Listing all runtime strategies...")
-    # response = requests.get(f"{BASE_URL}/api/v1/strategies/runtime")
-    # print(f"Status Code: {response.status_code}")
-    # if response.status_code == 202:
-    #     print(json.dumps(response.json(), indent=2))
+    print("\n2. Listing all runtime strategies...")
+    response = requests.get(f"{BASE_URL}/api/v1/strategies/runtime")
+    if response.status_code == 202:
+        print(json.dumps(response.json(), indent=2))
+    else:
+        print(f"Status Code: {response.status_code}")
+        print(f"response: {response.json()}")
     
     # print("\n3. Listing all db strategies...")
-    # response = requests.get(f"{BASE_URL}/api/v1/strategies/db")
+    # response = requests.get(f"{BASE_URL}/api/v1/strategies")
+    # if response.status_code == 202:
+    #     print(json.dumps(response.json(), indent=2))
+        
+    
+    # 5. 刪除策略
+    # print("\n5. Deleting strategy...")
+    # response = requests.delete(f"{BASE_URL}/api/v1/strategies/aec4d724-3b87-498e-837b-1e344e876efe")
     # print(f"Status Code: {response.status_code}")
     # if response.status_code == 202:
     #     print(json.dumps(response.json(), indent=2))
-    #     print("Now we have {} strategies in db".format(len(response.json())))
 
 
     # 3. 列出指定策略
@@ -105,19 +113,26 @@ def test_strategy_operations():
     # if response.status_code == 202:
     #     print(json.dumps(response.json(), indent=2))
 
-    print("\n4. Listing specific db strategies...")
-    response = requests.get(f"{BASE_URL}/api/v1/strategies/db/f8841ecb-42ab-47c5-9b31-b25c32578abf")
+    # print("\n4. Listing specific db strategies...")
+    # response = requests.get(f"{BASE_URL}/api/v1/strategies/runtime/f8841ecb-42ab-47c5-9b31-b25c32578abf")
+    # print(f"Status Code: {response.status_code}")
+    # if response.status_code == 202:
+    #     print(json.dumps(response.json(), indent=2))
+        
+    # print("\n5. unload strategy...")
+    # response = requests.post(f"{BASE_URL}/api/v1/strategies/aec4d724-3b87-498e-837b-1e344e876efe/unload")
+    # print(f"Status Code: {response.status_code}")
+    # if response.status_code == 202:
+    #     print(json.dumps(response.json(), indent=2))
+    
+    # 6. 修改策略
+    print("\n6. Activating strategy...")
+    response = requests.patch(f"{BASE_URL}/api/v1/strategies/89e137b0-e82a-4e2e-bf76-d2a23f7d7368/activate")
     print(f"Status Code: {response.status_code}")
     if response.status_code == 202:
         print(json.dumps(response.json(), indent=2))
-        print("success")
 
-    #     # 3. 暫停策略
-    #     print(f"\n3. Pausing strategy {strategy_id}...")
-    #     response = requests.patch(f"{BASE_URL}/strategies/{strategy_id}/pause")
-    #     print(f"Status Code: {response.status_code}")
-    #     if response.status_code == 200:
-    #         print(json.dumps(response.json(), indent=2))
+
 
     #     # 4. 修改策略參數
     #     print(f"\n4. Updating strategy {strategy_id}...")
