@@ -59,21 +59,19 @@ class SignalConfig(BaseModel):
 
 
 class StrategyStatus(str, Enum):
-    created = "created"
+    inactive = "inactive"
     active = "active"
     paused = "paused"
-    stopped = "stopped"
     error = "error"
     
 # 用於創建模型
-class StrategyMetadata(BaseModel):
+class StrategyMetadataBase(BaseModel):
     name: str
     description: Optional[str] = None
-    status: StrategyStatus = StrategyStatus.created
     data: DataConfig
     preprocess: Dict[str, PreprocessConfig]
     signals: SignalConfig
-
+    
     model_config = ConfigDict(
         json_encoders={
             datetime: lambda v: v.isoformat(),
@@ -82,13 +80,9 @@ class StrategyMetadata(BaseModel):
     )
     
     
-class StrategyMetadataCreate(BaseModel):
-    name: str
-    description: Optional[str] = None
-    status: StrategyStatus = StrategyStatus.created
-    data: DataConfig
-    preprocess: Dict[str, PreprocessConfig]
-    signals: SignalConfig
+class StrategyMetadataCreate(StrategyMetadataBase):
+    """Model for creation (input from client)"""
+    pass
 
     # @model_validator(mode="after")
     # def validate_preprocess_keys(cls, values):
@@ -101,15 +95,42 @@ class StrategyMetadataCreate(BaseModel):
     #             f"The following data sources are subscribed but not used in preprocess: {unused_keys}"
     #         )
 
+class StrategyMetadataCreateResponse(BaseModel):
+    """Model for creation response"""
+    message: str
+    id: str
+
+class StrategyMetadataInDB(StrategyMetadataBase):
+    """Model for storage (in DB)
+    說明:
+    1. client 建立新策略後第一步，會先把模型存到 DB 中
+    2. 接著會把模型載入到 Redis 中
+    所以 StrategyMetadata 會繼承 StrategyMetadataInDB
+    """
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    created_at: datetime = Field(default_factory=datetime.now)
+    updated_at: datetime = Field(default_factory=datetime.now)
+    
+
+class StrategyMetadataRuntime(StrategyMetadataInDB):
+    """Runtime model including status
+    說明:
+    策略載入 Redis 後，會需要紀錄 runtime 的狀態，
+    所以 StrategyMetadata 會繼承 StrategyMetadataInDB ，並且新增 status 欄位
+    """
+    status: StrategyStatus = Field(default=StrategyStatus.inactive)
+    
+    
 # 完整更新模型
-class StrategyMetadataUpdate(StrategyMetadata):
+class StrategyMetadataUpdate(StrategyMetadataRuntime):
+    """Model for update (input from client)"""
     pass
 
 # 部分更新模型
 class StrategyMetadataPatch(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
-    status: Optional[Literal["active", "paused", "stopped"]] = None
+    status: Optional[StrategyStatus] = None
     data: Optional[DataConfig] = None
     preprocess: Optional[Dict[str, PreprocessConfig]] = None
     signals: Optional[SignalConfig] = None
@@ -118,12 +139,3 @@ class StrategyMetadataPatch(BaseModel):
 class StrategyMetadataResponse(BaseModel):
     name: str
     description: str
-    
-class StrategyMetadataCreateResponse(BaseModel):
-    message: str
-    id: str
-    
-class StrategyMetadataInDB(StrategyMetadata):
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    created_at: datetime = Field(default_factory=datetime.now)
-    updated_at: datetime = Field(default_factory=datetime.now)
