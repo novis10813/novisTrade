@@ -11,9 +11,9 @@ class RedisClient:
         self.redis = Redis.from_url(f"redis://{redis_host}:{redis_port}/{redis_db}")
         
     
-    async def load_strategy(self, strategy: StrategyMetadataInDB) -> None:
+    async def create(self, strategy: StrategyMetadataInDB) -> None:
         """
-        Load Strategy to Redis
+        載入策略到 Redis
         """
         #TODO: 需要自定義 exception
         try:
@@ -26,9 +26,9 @@ class RedisClient:
         except Exception as e:
             raise e
         
-    async def unload_strategy(self, strategy_id: str) -> None:
+    async def delete(self, strategy_id: str) -> None:
         """
-        從 Redis 中卸載策略
+        從 Redis 中移除策略
         """
         try:
             key = f"strategy:{strategy_id}"
@@ -36,32 +36,26 @@ class RedisClient:
         except Exception as e:
             raise e
         
-    async def update_strategy(self, strategy_id: str, patch: StrategyMetadataPatch) -> None:
+    async def update(self, strategy_id: str, patch: StrategyMetadataPatch) -> None:
+        """
+        更新策略
+        """
         try:
             key = f"strategy:{strategy_id}"
             raw_data = await self.redis.get(key)
             if raw_data is None:
                 raise ValueError(f"Strategy {strategy_id} not found")
-            strategy = StrategyMetadataInDB.model_validate_json(raw_data)
-            update_strategy = strategy.model_copy(update=patch.model_dump())
-            update_strategy.updated_at = datetime.now()
+            
+            strategy = StrategyMetadataRuntime.model_validate_json(raw_data)
+            
+            update_strategy = strategy.model_copy(
+                update=patch.model_dump(exclude_unset=True)
+            )
             await self.redis.set(key, update_strategy.model_dump_json())
         except Exception as e:
             raise e
     
-    async def activate_strategy(self, strategy_id: str):
-        """
-        Change Strategy Status to Active
-        """
-        pass
-    
-    async def deactivate_strategy(self, strategy_id: str):
-        """
-        Change Strategy Status to Inactive
-        """
-        pass
-    
-    async def get_strategies(self, status: Optional[StrategyStatus] = None, strategy_id: Optional[str] = None) -> List[StrategyMetadataInDB]:
+    async def get(self, status: Optional[StrategyStatus] = None, strategy_id: Optional[str] = None) -> List[StrategyMetadataRuntime]:
         """
         列出所有策略
         Args:
@@ -72,7 +66,7 @@ class RedisClient:
         try:
             keys = await self.redis.keys("strategy:*")
             # 先把 Redis 中的所有策略列出來
-            strategies = [StrategyMetadataInDB.model_validate_json(await self.redis.get(key)) for key in keys]
+            strategies = [StrategyMetadataRuntime.model_validate_json(await self.redis.get(key)) for key in keys]
             if strategy_id:
                 strategies = [strategy for strategy in strategies if strategy.id == strategy_id]
             elif status:

@@ -126,14 +126,40 @@ class StrategyMetadataUpdate(StrategyMetadataRuntime):
     """Model for update (input from client)"""
     pass
 
-# 部分更新模型
+# Patch 模型
+
+class DataConfigPatch(BaseModel):
+    source: Optional[Literal["stream", "historic"]] = None
+    types: Optional[List[DataType]] = None
+    
+class PreprocessConfigPatch(BaseModel):
+    operation: Optional[str] = None
+    params: Optional[Dict[str, Any]] = None
+    
+class SignalConfigPatch(BaseModel):
+    models: Optional[List[SignalModel]] = None
+    logic: Optional[SignalLogic] = None
+        
+class PreprocessStepPatch(BaseModel):
+    operation: Optional[str] = None
+    params: Optional[Dict[str, Any]] = None
+
+# 使用 TypeVar 和 Dict 來定義可選的嵌套結構
+ProcessStepsPatch = Dict[str, List[PreprocessStepPatch]]
+PreprocessConfigPatch = Dict[str, ProcessStepsPatch]
+
 class StrategyMetadataPatch(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     status: Optional[StrategyStatus] = None
-    data: Optional[DataConfig] = None
-    preprocess: Optional[Dict[str, PreprocessConfig]] = None
-    signals: Optional[SignalConfig] = None
+    data: Optional[DataConfigPatch] = None
+    preprocess: Optional[PreprocessConfigPatch] = None
+    signals: Optional[SignalConfigPatch] = None
+    updated_at: datetime = Field(default_factory=datetime.now)
+    
+    model_config = ConfigDict(
+        extra = "forbid"
+    )
     
 # 用於回應的模型
 class StrategyMetadataRuntimeSummary(BaseModel):

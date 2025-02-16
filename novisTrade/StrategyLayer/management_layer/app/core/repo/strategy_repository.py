@@ -3,7 +3,7 @@ import yaml
 import logging
 
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 from schemas.strategy import StrategyMetadataInDB
 # 如果之後使用 DB，可以在 dependencies.py 中定義一個 DB 的 connector，然後在這邊使用
@@ -11,7 +11,7 @@ from schemas.strategy import StrategyMetadataInDB
 logger = logging.getLogger(__name__)
 
 
-def save_strategy(strategy: StrategyMetadataInDB, storage_path: Path) -> None:
+def create(strategy: StrategyMetadataInDB, storage_path: Path) -> None:
     """保存策略到文件
     Args:
         strategy (StrategyMetadataInDB): 策略數據
@@ -27,7 +27,7 @@ def save_strategy(strategy: StrategyMetadataInDB, storage_path: Path) -> None:
             default_flow_style=False
         )
 
-def load_strategy(strategy_id: str, storage_path: Path) -> StrategyMetadataInDB:
+def get(strategy_id: Optional[str], storage_path: Path) -> List[StrategyMetadataInDB]:
     """從文件加載策略
     Args:
         strategy_id (str): 策略ID
@@ -35,12 +35,20 @@ def load_strategy(strategy_id: str, storage_path: Path) -> StrategyMetadataInDB:
     Returns:
         StrategyMetadataInDB: 策略數據
     """
-    strategy_path = storage_path / f"{strategy_id}.yaml"
-    with strategy_path.open("r", encoding="utf-8") as f:
-        strategy_data = yaml.safe_load(f)
-        return StrategyMetadataInDB(**strategy_data)
+    if strategy_id is None:
+        strategies = []
+        for strategy_path in storage_path.glob("*.yaml"):
+            with strategy_path.open("r", encoding="utf-8") as f:
+                strategy_data = yaml.safe_load(f)
+                strategies.append(StrategyMetadataInDB(**strategy_data))
+        return strategies
+    else:
+        strategy_path = storage_path / f"{strategy_id}.yaml"
+        with strategy_path.open("r", encoding="utf-8") as f:
+            strategy_data = yaml.safe_load(f)
+            return [StrategyMetadataInDB(**strategy_data)]
 
-def delete_strategy(strategy_id: str, storage_path: Path) -> None:
+def delete(strategy_id: str, storage_path: Path) -> None:
     """刪除策略
     Args:
         strategy_id (str): 策略ID
@@ -51,15 +59,3 @@ def delete_strategy(strategy_id: str, storage_path: Path) -> None:
         strategy_path.unlink()
     else:
         raise ValueError(f"Strategy {strategy_id} not found in {storage_path}")
-
-def get_strategies(storage_path: Path) -> List[StrategyMetadataInDB]:
-    """從文件加載所有策略
-    Args:
-        storage_path (Path): 策略存儲路徑
-    Returns:
-        List[StrategyMetadataInDB]: 策略數據列表
-    """
-    strategies = []
-    for strategy_path in storage_path.glob("*.yaml"):
-        strategies.append(load_strategy(strategy_path.stem, storage_path))
-    return strategies

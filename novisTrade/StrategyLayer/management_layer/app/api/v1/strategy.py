@@ -11,7 +11,8 @@ from app.schemas.strategy import (
     StrategyMetadataRuntimeResponse,
     StrategyMetadataDBSummary,
     StrategyMetadataDBResponse,
-    StrategyStatus
+    StrategyStatus,
+    StrategyMetadataPatch
 )
 from app.core import manager
 
@@ -50,10 +51,10 @@ async def create_strategy(
     response_description="Get strategies"
 )
 async def get_runtime_strategies(
-    status: Optional[StrategyStatus] = Query(None, description="Status of the strategy")
+    strategy_status: Optional[StrategyStatus] = Query(None, description="Status of the strategy")
 ):
     try:
-        return await manager.get_runtime_strategies(status)
+        return await manager.get_runtime_strategies(strategy_status)
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"{str(e)}")
     
@@ -70,7 +71,7 @@ async def get_runtime_strategy(strategy_id: str):
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"{str(e)}")
     
 @router.get(
-    "/db",
+    "/",
     response_model=List[StrategyMetadataDBSummary],
     status_code=status.HTTP_202_ACCEPTED,
     response_description="Get strategies"
@@ -86,7 +87,7 @@ async def get_db_strategies():
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"{str(e)}")
     
 @router.get(
-    "/db/{strategy_id}",
+    "/{strategy_id}",
     response_model=StrategyMetadataDBResponse,
     status_code=status.HTTP_202_ACCEPTED,
     response_description="Get strategy"
@@ -96,53 +97,93 @@ async def get_db_strategy(strategy_id: str):
         return await manager.get_db_strategy(strategy_id)
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"{str(e)}")
-        
-# @router.get("/", response_model=List[StrategyMetadataWithId])
-# def get_all_strategies(
-#     manager: StrategyManager = Depends(get_strategy_manager),
-# ):
-#     return manager.get_all_strategies()
+    
+# unload strategy from redis
+@router.post(
+    "/{strategy_id}/unload",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_description="Unload strategy"
+)
+async def unload_strategy(strategy_id: str):
+    try:
+        return await manager.unload_strategy(strategy_id)
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"{str(e)}")
 
-# @router.get("/{strategy_id}", response_model=StrategyMetadataWithId)
-# def get_strategy(
-#     strategy_id: str,
-#     manager: StrategyManager = Depends(get_strategy_manager),
-# ):
-#     strategy = manager.get_strategy(strategy_id)
-#     if not strategy:
-#         raise HTTPException(status_code=404, detail="Strategy not found")
-#     return strategy
+@router.delete(
+    "/{strategy_id}",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_description="Delete strategy"
+)
+async def delete_strategy(strategy_id: str):
+    try:
+        return await manager.delete_strategy(strategy_id)
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"{str(e)}")
 
-# @router.patch("/{strategy_id}/pause", response_model=StrategyMetadataWithId)
-# def pause_strategy(strategy_id: str):
-#     strategy = manager.pause_strategy(strategy_id)
-#     if not strategy:
-#         raise HTTPException(status_code=404, detail="Strategy not found")
-#     return strategy
+@router.patch(
+    "/{strategy_id}",
+    response_model=StrategyMetadataRuntimeResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    response_description="Update strategy"
+)
+async def update_strategy(strategy_id: str, patch_data: StrategyMetadataPatch):
+    try:
+        return await manager.update_strategy(strategy_id, patch_data)
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"{str(e)}")
+    
+@router.patch(
+    "/{strategy_id}/activate",
+    response_model=StrategyMetadataRuntimeResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    response_description="activate strategy"
+)
+async def activate_strategy(strategy_id: str):
+    try:
+        patch_data = StrategyMetadataPatch(status=StrategyStatus.active)
+        return await manager.update_strategy(strategy_id, patch_data)
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"{str(e)}")
 
+@router.patch(
+    "/{strategy_id}/pause",
+    response_model=StrategyMetadataRuntimeResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    response_description="pause strategy"
+)
+async def pause_strategy(strategy_id: str):
+    try:
+        patch_data = StrategyMetadataPatch(status=StrategyStatus.paused)
+        return await manager.update_strategy(strategy_id, patch_data)
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"{str(e)}")
 
-# @router.patch("/{strategy_id}/resume", response_model=StrategyMetadataWithId)
-# def resume_strategy(strategy_id: str):
-#     strategy = manager.resume_strategy(strategy_id)
-#     if not strategy:
-#         raise HTTPException(status_code=404, detail="Strategy not found")
-#     return strategy
+@router.patch(
+    "/{strategy_id}/resume",
+    response_model=StrategyMetadataRuntimeResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    response_description="resume strategy"
+)
+async def resume_strategy(strategy_id: str):
+    try:
+        patch_data = StrategyMetadataPatch(status=StrategyStatus.active)
+        return await manager.update_strategy(strategy_id, patch_data)
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"{str(e)}")
 
+@router.patch(
+    "/{strategy_id}/deactivate",
+    response_model=StrategyMetadataRuntimeResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    response_description="deactivate strategy"
+)
+async def deactivate_strategy(strategy_id: str):
+    try:
+        patch_data = StrategyMetadataPatch(status=StrategyStatus.inactive)
+        return await manager.update_strategy(strategy_id, patch_data)
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"{str(e)}")
 
-# @router.put("/{strategy_id}", response_model=StrategyMetadataWithId)
-# def modify_strategy(strategy_id: str, strategy: StrategyUpdate):
-#     updated = manager.update_strategy(
-#         strategy_id, strategy.model_dump(exclude_unset=True)
-#     )
-#     if not updated:
-#         raise HTTPException(status_code=404, detail="Strategy not found")
-#     return updated
-
-
-@router.delete("/{strategy_id}")
-def remove_strategy(strategy_id: str):
-    if not manager.remove_strategy(strategy_id):
-        raise HTTPException(status_code=404, detail="Strategy not found")
-    return {"message": "Strategy removed successfully"}
 
 strategies = router
